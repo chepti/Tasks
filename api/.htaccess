@@ -1,0 +1,7 @@
+# Never serve the database or config over HTTP
+<FilesMatch "\.(db|db-wal|db-shm|sqlite)$">
+    Require all denied
+</FilesMatch>
+<Files "config.php">
+    Require all denied
+</Files>

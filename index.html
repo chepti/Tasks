@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>המשימות שלי</title>
+<meta name="description" content="מערכת משימות אישית בהשראת GTD">
+<meta name="theme-color" content="#FFF8F0">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Varela+Round&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<!-- מסך כניסה -->
+<div id="login-screen" class="login-screen hidden">
+  <div class="login-card">
+    <div class="login-logo" id="login-logo"></div>
+    <h1>המשימות שלי</h1>
+    <p class="login-sub">מה עושים עכשיו?</p>
+    <form id="login-form">
+      <input type="password" id="login-password" placeholder="סיסמה" autocomplete="current-password">
+      <button type="submit" class="btn btn-primary btn-lg">כניסה</button>
+    </form>
+    <p id="login-error" class="login-error hidden">הסיסמה לא נכונה, נסי שוב</p>
+  </div>
+</div>
+
+<!-- האפליקציה -->
+<div id="app" class="app hidden">
+
+  <header class="topbar">
+    <div class="topbar-title">
+      <span id="greeting">בוקר טוב</span>
+    </div>
+    <nav class="topnav" id="topnav"></nav>
+    <div class="topbar-actions">
+      <button class="icon-btn" id="btn-history" title="היסטוריה"></button>
+      <button class="icon-btn" id="btn-settings" title="הגדרות"></button>
+    </div>
+  </header>
+
+  <main id="main" class="main"></main>
+
+  <nav class="bottomnav" id="bottomnav"></nav>
+
+  <button class="fab" id="fab" title="משימה חדשה"></button>
+</div>
+
+<!-- גיליון עריכת משימה -->
+<div class="sheet-backdrop hidden" id="sheet-backdrop"></div>
+<div class="sheet hidden" id="task-sheet"></div>
+
+<!-- מודאל כללי (היסטוריה / הדבקה / הגדרות / פרויקט) -->
+<div class="modal-backdrop hidden" id="modal-backdrop">
+  <div class="modal" id="modal"></div>
+</div>
+
+<div id="toast" class="toast hidden"></div>
+<canvas id="confetti-canvas"></canvas>
+
+<script src="js/app.js"></script>
+<script>
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js').catch(function(){});
+}
+</script>
+</body>
+</html>
