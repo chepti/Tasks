@@ -1,0 +1,8 @@
+# סודות — לא להעלות ל-git לעולם. הקובץ האמיתי חי רק בשרת ובמחשב המקומי,
+# ומועלה ידנית ב-scp. ראו api/config.sample.php לתבנית.
+api/config.php
+
+# קובץ הנתונים בשרת — נוצר אוטומטית, לא חלק מהקוד
+api/tasks.db
+api/tasks.db-wal
+api/tasks.db-shm
