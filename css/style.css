@@ -704,6 +704,25 @@ button.chip:hover { transform: translateY(-1px); }
   min-height: 1em;
 }
 
+.gcal-btn { width: 100%; margin-bottom: 10px; }
+
+.gcal-box {
+  display: flex; gap: 12px;
+  background: var(--bg-soft);
+  border-radius: 18px;
+  padding: 14px 16px;
+  margin-bottom: 12px;
+  font-size: .9rem; line-height: 1.5;
+}
+.gcal-num {
+  width: 28px; height: 28px; flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--lilac); color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 600;
+}
+.gcal-box input[readonly] { font-size: .8rem; background: #fff; }
+
 /* ============ אנימציות ============ */
 
 @keyframes pop-in {

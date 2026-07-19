@@ -1,0 +1,21 @@
+# קבצי המעטפת (HTML/JS/CSS/מניפסט/SW) — לאמת מול השרת בכל טעינה,
+# כדי שעדכוני קוד יתפשטו מיד ולא ייתקעו בקאש הדפדפן.
+<FilesMatch "\.(html|js|css|webmanifest)$">
+  <IfModule mod_headers.c>
+    Header set Cache-Control "no-cache, must-revalidate"
+  </IfModule>
+</FilesMatch>
+
+<Files "sw.js">
+  <IfModule mod_headers.c>
+    Header set Cache-Control "no-cache, must-revalidate"
+    Header set Service-Worker-Allowed "/"
+  </IfModule>
+</Files>
+
+# אייקונים — אפשר לקאש לאורך זמן (שמותיהם קבועים)
+<FilesMatch "\.(png|jpg|jpeg|svg|webp|ico)$">
+  <IfModule mod_headers.c>
+    Header set Cache-Control "public, max-age=604800"
+  </IfModule>
+</FilesMatch>

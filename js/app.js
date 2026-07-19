@@ -557,6 +557,50 @@ const FU_ITEMS = [
   ['fu_takeaways', 'עם מה יוצאים מהמפגש', 'gift'],
 ];
 
+const TMODE = {
+  physical: { label: 'פיזי',     icon: 'mapPin',  color: 'sky' },
+  online:   { label: 'מקוון',    icon: 'monitor', color: 'lilac' },
+  hybrid:   { label: 'היברידי',  icon: 'refresh', color: 'teal' },
+};
+
+/* בניית קישור "הוספה ליומן גוגל" עם האירוע מוכן מראש */
+function gcalUrl(t) {
+  if (!t.date) return null;
+  const pad = n => String(n).padStart(2, '0');
+  const compact = d => `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}`;
+  let dates;
+  if (t.time_from) {
+    const clean = s => s.replace(':', '');
+    const from = `${t.date.replace(/-/g, '')}T${clean(t.time_from)}00`;
+    const toH = t.time_to ? clean(t.time_to) : pad(parseInt(t.time_from, 10) + 2) + '00';
+    const to = `${t.date.replace(/-/g, '')}T${toH}00`;
+    dates = `${from}/${to}`;
+    // ctz מבטיח שהשעה תתפרש כשעון ישראל
+  } else {
+    const d0 = new Date(t.date + 'T12:00:00');
+    const d1 = new Date(d0); d1.setDate(d1.getDate() + 1);
+    dates = `${compact(d0)}/${compact(d1)}`;
+  }
+  const mode = TMODE[t.mode]?.label;
+  const details = [
+    mode && `אופן: ${mode}`,
+    (t.contact_name || t.contact_phone) && `איש קשר: ${[t.contact_name, t.contact_phone].filter(Boolean).join(' · ')}`,
+    t.people_count && `משתתפים: ${t.people_count}`,
+    t.message && `מסר: ${t.message}`,
+    t.slides_url && `מצגת: ${t.slides_url}`,
+    t.recording_url && `הקלטה: ${t.recording_url}`,
+  ].filter(Boolean).join('\n');
+  const p = new URLSearchParams({
+    action: 'TEMPLATE',
+    text: (mode ? `[${mode}] ` : '') + (t.topic || 'הדרכה'),
+    dates,
+    ctz: 'Asia/Jerusalem',
+  });
+  if (t.place) p.set('location', t.place);
+  if (details) p.set('details', details);
+  return 'https://calendar.google.com/calendar/render?' + p.toString();
+}
+
 function trainingCard(t, { finished = false } = {}) {
   const contact = [t.contact_name, t.contact_role].filter(Boolean).join(' · ');
   return `
@@ -565,6 +609,7 @@ function trainingCard(t, { finished = false } = {}) {
       <div style="flex:1;min-width:0">
         <div class="training-topic">${esc(t.topic || t.place || 'הדרכה חדשה')}</div>
         <div class="training-meta">
+          ${t.mode && TMODE[t.mode] ? `<span class="tag t-${TMODE[t.mode].color}">${ic(TMODE[t.mode].icon, 11)}${TMODE[t.mode].label}</span>` : ''}
           ${t.place ? `<span class="tag t-sky">${ic('mapPin', 11)}${esc(t.place)}</span>` : ''}
           <span class="tag ${t.date ? 't-lilac' : 't-gray'}">${ic('calendar', 11)}${trainingDateLabel(t)}</span>
           ${!finished && t.date ? `<span class="tag t-coral">${ic('clock', 11)}${untilLabel(t.date)}</span>` : ''}
@@ -605,6 +650,7 @@ function renderTrainings() {
     </div>
     <h2>${esc(next.topic || 'הדרכה')}</h2>
     <div class="training-hero-meta">
+      ${next.mode && TMODE[next.mode] ? `<span>${ic(TMODE[next.mode].icon, 15)} ${TMODE[next.mode].label}</span>` : ''}
       ${next.place ? `<span>${ic('mapPin', 15)} ${esc(next.place)}</span>` : ''}
       <span>${ic('calendar', 15)} ${trainingDateLabel(next)}</span>
       ${next.people_count ? `<span>${ic('user', 15)} ${esc(next.people_count)} משתתפים</span>` : ''}
@@ -615,6 +661,7 @@ function renderTrainings() {
       ${next.contact_email ? `<a class="btn btn-ghost hero-btn" href="mailto:${esc(next.contact_email)}" onclick="event.stopPropagation()">${ic('mail', 15)} מייל</a>` : ''}
       ${next.slides_url ? `<button class="btn btn-ghost hero-btn" data-copy="${esc(next.slides_url)}">${ic('monitor', 15)} העתקת מצגת</button>` : ''}
       ${next.recording_url ? `<button class="btn btn-ghost hero-btn" data-copy="${esc(next.recording_url)}">${ic('mic', 15)} העתקת הקלטה</button>` : ''}
+      ${gcalUrl(next) ? `<a class="btn btn-ghost hero-btn" href="${gcalUrl(next)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${ic('calendar', 15)} הוספה ליומן גוגל</a>` : ''}
     </div>
   </div>` : '';
 
@@ -712,8 +759,14 @@ function openTrainingSheet(id) {
 
     <div class="sheet-section">${ic('presentation', 15)} המפגש</div>
     ${txt('topic', 'נושא', 'sparkles', 'על מה ההדרכה?')}
+    <div class="field">
+      <div class="field-label">${ic('monitor', 13)} מקוון או פיזי</div>
+      <div class="chips">${Object.entries(TMODE).map(([k, v]) => `
+        <button type="button" class="chip c-${v.color} ${t.mode === k ? 'on' : ''}" data-tmode="${k}">${ic(v.icon, 14)}${v.label}</button>`).join('')}
+      </div>
+    </div>
     <div class="row-2">
-      ${txt('place', 'שם המקום', 'mapPin')}
+      ${txt('place', 'שם המקום / פלטפורמה', 'mapPin')}
       ${txt('date', 'תאריך', 'calendar', '', 'date')}
     </div>
     <div class="row-2">
@@ -721,6 +774,7 @@ function openTrainingSheet(id) {
       ${txt('time_to', 'עד שעה', 'clock', '', 'time')}
     </div>
     <div id="ts-daylabel" class="day-hint"></div>
+    <a id="ts-gcal" class="btn btn-ghost gcal-btn hidden" target="_blank" rel="noopener">${ic('calendar', 15)} הוספה ליומן גוגל</a>
 
     <div class="sheet-section">${ic('user', 15)} איש קשר</div>
     <div class="row-2">
@@ -775,14 +829,31 @@ function openTrainingSheet(id) {
   const dayHint = () => {
     const dv = $('#ts-date').value;
     $('#ts-daylabel').textContent = dv ? 'יום ' + DAY_NAMES[new Date(dv + 'T12:00:00').getDay()] : '';
+    const gc = $('#ts-gcal');
+    const url = dv ? gcalUrl({
+      date: dv, time_from: $('#ts-time_from').value, time_to: $('#ts-time_to').value,
+      topic: $('#ts-topic').value, place: $('#ts-place').value, mode: t.mode,
+      contact_name: $('#ts-contact_name').value, contact_phone: $('#ts-contact_phone').value,
+      people_count: $('#ts-people_count').value, message: $('#ts-message').value,
+      slides_url: $('#ts-slides_url').value, recording_url: $('#ts-recording_url').value,
+    }) : null;
+    gc.classList.toggle('hidden', !url);
+    if (url) gc.href = url;
   };
   dayHint();
-  $('#ts-date').oninput = dayHint;
+  ['ts-date', 'ts-time_from', 'ts-time_to', 'ts-topic', 'ts-place'].forEach(id => {
+    const el = $('#' + id); if (el) el.oninput = dayHint;
+  });
 
   $$('#task-sheet [data-copyfield]').forEach(b => b.onclick = e => {
     e.preventDefault();
     const val = $('#' + b.dataset.copyfield).value.trim();
     if (val) copyText(val);
+  });
+
+  $$('#task-sheet [data-tmode]').forEach(b => b.onclick = () => {
+    t.mode = t.mode === b.dataset.tmode ? '' : b.dataset.tmode;
+    $$('#task-sheet [data-tmode]').forEach(x => x.classList.toggle('on', x.dataset.tmode === t.mode));
   });
 
   $('#ts-cancel').onclick = closeSheet;
@@ -792,6 +863,7 @@ function openTrainingSheet(id) {
     ['topic','place','date','time_from','time_to','contact_name','contact_role','contact_phone','contact_email',
      'pay_amount','pay_process','people_count','style','audience','ideas','tools','message','structure','equipment',
      'slides_url','recording_url','notes'].forEach(f => payload[f] = $('#ts-' + f).value.trim());
+    payload.mode = t.mode || '';
     payload.pay_received = $('#ts-pay_received').checked ? 1 : 0;
     FU_ITEMS.forEach(([k]) => payload[k] = $('#ts-' + k).checked ? 1 : 0);
     closeSheet();
@@ -1283,10 +1355,44 @@ async function openHistoryModal() {
   });
 }
 
+async function openGcalModal() {
+  openModal(`<h3>${ic('calendar', 20)} סנכרון ליומן גוגל</h3><p style="color:var(--ink-soft)">טוען...</p>`);
+  let url;
+  try { url = (await api('feed_url')).ics_url; }
+  catch (e) { openModal(`<h3>${ic('calendar', 20)} סנכרון ליומן גוגל</h3><p style="color:#D8402F">צריך חיבור לרשת כדי לקבל את הקישור.</p><div class="sheet-actions"><button class="btn btn-ghost" id="g-close" style="flex:1">סגירה</button></div>`); $('#g-close').onclick = closeModal; return; }
+  openModal(`
+    <h3>${ic('calendar', 20)} סנכרון ליומן גוגל</h3>
+    <p style="color:var(--ink-soft);font-size:.9rem;margin-bottom:6px">שתי דרכים:</p>
+    <div class="gcal-box">
+      <div class="gcal-num">1</div>
+      <div>
+        <b>מנוי אוטומטי (מומלץ)</b> — כל ההדרכות מופיעות ביומן ומתעדכנות לבד.<br>
+        <span style="color:var(--ink-soft);font-size:.85rem">ביומן גוגל במחשב: <b>הגדרות → הוספת יומן → מכתובת URL</b>, והדביקי את הקישור. גוגל מרענן כל כמה שעות.</span>
+        <div class="url-row" style="margin-top:10px">
+          <input type="text" id="gcal-url" value="${esc(url)}" readonly dir="ltr">
+          <button class="icon-btn" id="gcal-copy" title="העתקה">${ic('copy', 16)}</button>
+        </div>
+      </div>
+    </div>
+    <div class="gcal-box">
+      <div class="gcal-num">2</div>
+      <div>
+        <b>הוספה מיידית</b> — לכל הדרכה יש כפתור "הוספה ליומן גוגל" (בכרטיס למעלה ובטופס העריכה) שפותח את האירוע מוכן. מושלם למובייל ולהדרכה קרובה.
+      </div>
+    </div>
+    <p style="color:var(--ink-faint);font-size:.78rem;margin-top:10px">הקישור פרטי — כל מי שיש לו אותו יכול לראות את לוח ההדרכות (בקריאה בלבד). אפשר לאפס אותו בקובץ config בשרת.</p>
+    <div class="sheet-actions"><button class="btn btn-primary" id="gcal-open" style="flex:1">${ic('calendar', 16)} לפתוח את יומן גוגל</button><button class="btn btn-ghost" id="g-close">סגירה</button></div>`);
+  $('#gcal-copy').onclick = () => copyText(url);
+  $('#gcal-url').onclick = () => $('#gcal-url').select();
+  $('#gcal-open').onclick = () => window.open('https://calendar.google.com/calendar/u/0/r/settings/addbyurl', '_blank', 'noopener');
+  $('#g-close').onclick = closeModal;
+}
+
 function openSettingsModal() {
   openModal(`
     <h3>${ic('settings', 20)} הגדרות</h3>
     <div style="display:flex;flex-direction:column;gap:10px">
+      <button class="btn btn-ghost" id="set-gcal" style="justify-content:flex-start">${ic('calendar', 18)} סנכרון הדרכות ליומן גוגל</button>
       <button class="btn btn-ghost" id="set-export" style="justify-content:flex-start">${ic('download', 18)} גיבוי — הורדת כל הנתונים</button>
       <button class="btn btn-ghost" id="set-history" style="justify-content:flex-start">${ic('history', 18)} היסטוריית שינויים ושחזור</button>
       <button class="btn btn-ghost" id="set-logout" style="justify-content:flex-start">${ic('logout', 18)} יציאה</button>
@@ -1295,6 +1401,7 @@ function openSettingsModal() {
   $('#set-close').onclick = closeModal;
   $('#set-logout').onclick = () => { closeModal(); logout(); };
   $('#set-history').onclick = () => { closeModal(); openHistoryModal(); };
+  $('#set-gcal').onclick = () => { closeModal(); openGcalModal(); };
   $('#set-export').onclick = async () => {
     const data = await api('export');
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });

@@ -37,7 +37,7 @@ function out($data) { echo json_encode($data, JSON_UNESCAPED_UNICODE); exit; }
 
 const TASK_FIELDS = ['title','notes','project_id','status','context','energy','size','is_next','due_date','snoozed_until','completed_at','sort_order'];
 const PROJECT_FIELDS = ['name','color','notes','status','sort_order'];
-const TRAINING_FIELDS = ['client_id','topic','place','date','time_from','time_to',
+const TRAINING_FIELDS = ['client_id','topic','place','mode','date','time_from','time_to',
     'contact_name','contact_phone','contact_email','contact_role',
     'pay_amount','pay_process','pay_received',
     'people_count','audience','style','ideas','tools','equipment','structure','message',
@@ -79,7 +79,8 @@ function helpDoc() {
             'snoozed_until' => 'YYYY-MM-DD HH:MM:SS (UTC) or "" — hidden from "now" until then',
         ],
         'training_fields' => [
-            'topic' => 'subject of the session', 'place' => 'venue name',
+            'topic' => 'subject of the session', 'place' => 'venue name or platform',
+            'mode' => 'physical / online / hybrid',
             'date' => 'YYYY-MM-DD', 'time_from' => 'HH:MM', 'time_to' => 'HH:MM',
             'contact_name / contact_phone / contact_email / contact_role' => 'contact person details',
             'pay_amount / pay_process' => 'payment sum and process', 'pay_received' => '0/1',
@@ -109,6 +110,8 @@ function helpDoc() {
             'history'        => 'GET  — ?limit=100 recent changes with before-snapshots.',
             'restore'        => 'POST — { history_id } revert an item to that snapshot.',
             'export'         => 'GET  — full backup JSON.',
+            'feed_url'       => 'GET  — the private ICS calendar-subscription URL (for Google Calendar "add from URL").',
+            'ics'            => 'GET  — ?token=<feed token> the iCalendar feed itself (text/calendar). Auth via feed token, not the password.',
         ],
         'examples' => [
             'add a tagged task' =>
@@ -132,6 +135,83 @@ function helpDoc() {
 $action = $_GET['action'] ?? '';
 
 if ($action === 'help') { out(helpDoc()); }
+
+/* ---------- ICS calendar feed (read-only, authed by FEED_TOKEN) ---------- */
+if ($action === 'ics') {
+    $tok = $_GET['token'] ?? '';
+    if (!isset($FEED_TOKEN) || $FEED_TOKEN === '' || !hash_equals($FEED_TOKEN, (string)$tok)) {
+        http_response_code(401);
+        header('Content-Type: text/plain; charset=utf-8');
+        echo 'unauthorized feed token';
+        exit;
+    }
+    $db = new PDO('sqlite:' . $DB_PATH);
+    $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+    $rows = [];
+    try {
+        $rows = $db->query("SELECT * FROM trainings WHERE date != '' ORDER BY date")->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Throwable $e) { $rows = []; }
+
+    $host = $_SERVER['HTTP_HOST'] ?? 'chepti.com';
+    $esc = function ($s) {
+        $s = str_replace(["\\", "\n", ",", ";"], ["\\\\", "\\n", "\\,", "\\;"], (string)$s);
+        return $s;
+    };
+    // fold long lines to <=75 octets per RFC 5545
+    $fold = function ($line) {
+        $out = ''; $len = 0;
+        foreach (preg_split('//u', $line, -1, PREG_SPLIT_NO_EMPTY) as $ch) {
+            $b = strlen($ch);
+            if ($len + $b > 73) { $out .= "\r\n "; $len = 1; }
+            $out .= $ch; $len += $b;
+        }
+        return $out;
+    };
+
+    $MODE = ['physical' => 'פיזי', 'online' => 'מקוון', 'hybrid' => 'היברידי'];
+    $L = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//chepti//tasks//HE',
+          'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', 'X-WR-CALNAME:הדרכות', 'X-WR-TIMEZONE:Asia/Jerusalem'];
+
+    foreach ($rows as $t) {
+        $date = str_replace('-', '', $t['date']);          // YYYYMMDD
+        $allDay = empty($t['time_from']);
+        $L[] = 'BEGIN:VEVENT';
+        $L[] = 'UID:training-' . $t['id'] . '@' . $host;
+        $L[] = 'DTSTAMP:' . gmdate('Ymd\THis\Z');
+        if ($allDay) {
+            $end = gmdate('Ymd', strtotime($t['date'] . ' +1 day'));
+            $L[] = 'DTSTART;VALUE=DATE:' . $date;
+            $L[] = 'DTEND;VALUE=DATE:' . $end;
+        } else {
+            $from = str_replace(':', '', $t['time_from']) . '00';
+            $to = $t['time_to'] ? str_replace(':', '', $t['time_to']) . '00'
+                                : sprintf('%02d0000', (int)substr($t['time_from'], 0, 2) + 2);
+            $L[] = 'DTSTART;TZID=Asia/Jerusalem:' . $date . 'T' . $from;
+            $L[] = 'DTEND;TZID=Asia/Jerusalem:' . $date . 'T' . $to;
+        }
+        $modeLabel = $MODE[$t['mode']] ?? '';
+        $summary = trim(($modeLabel ? "[$modeLabel] " : '') . ($t['topic'] ?: 'הדרכה'));
+        $L[] = $fold('SUMMARY:' . $esc($summary));
+        if ($t['place']) $L[] = $fold('LOCATION:' . $esc($t['place']));
+
+        $desc = [];
+        if ($modeLabel) $desc[] = "אופן: $modeLabel";
+        if ($t['contact_name'] || $t['contact_phone']) $desc[] = 'איש קשר: ' . trim($t['contact_name'] . ' ' . $t['contact_phone']);
+        if ($t['people_count']) $desc[] = 'משתתפים: ' . $t['people_count'];
+        if ($t['message']) $desc[] = 'מסר: ' . $t['message'];
+        if ($t['slides_url']) $desc[] = 'מצגת: ' . $t['slides_url'];
+        if ($t['recording_url']) $desc[] = 'הקלטה: ' . $t['recording_url'];
+        if ($t['notes']) $desc[] = $t['notes'];
+        if ($desc) $L[] = $fold('DESCRIPTION:' . $esc(implode("\n", $desc)));
+        $L[] = 'END:VEVENT';
+    }
+    $L[] = 'END:VCALENDAR';
+
+    header('Content-Type: text/calendar; charset=utf-8');
+    header('Content-Disposition: inline; filename="trainings.ics"');
+    echo implode("\r\n", $L) . "\r\n";
+    exit;
+}
 
 /* ---------- auth gate ---------- */
 $key = $_SERVER['HTTP_X_KEY'] ?? $_GET['key'] ?? '';
@@ -177,6 +257,7 @@ $db->exec("CREATE TABLE IF NOT EXISTS trainings (
     client_id TEXT DEFAULT '',              -- offline-created id, for idempotent upsert
     topic TEXT DEFAULT '',
     place TEXT DEFAULT '',
+    mode TEXT DEFAULT '',                   -- physical | online | hybrid
     date TEXT DEFAULT '',                   -- YYYY-MM-DD
     time_from TEXT DEFAULT '',
     time_to TEXT DEFAULT '',
@@ -204,6 +285,11 @@ $db->exec("CREATE TABLE IF NOT EXISTS trainings (
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
 )");
+// migration: add columns to an already-existing trainings table (ignore if present)
+foreach (['mode' => "TEXT DEFAULT ''"] as $col => $decl) {
+    try { $db->exec("ALTER TABLE trainings ADD COLUMN $col $decl"); } catch (Throwable $e) { /* exists */ }
+}
+
 $db->exec("CREATE TABLE IF NOT EXISTS history (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     entity TEXT NOT NULL,
@@ -489,6 +575,12 @@ function dispatch($db, $action, $data) {
         $restored = rowOrFail($db, $table, $snap['id']);
         logHistory($db, $h['entity'], $snap['id'], 'restore', $restored);
         return ['restored' => $restored];
+    }
+
+    case 'feed_url': {
+        global $FEED_TOKEN;
+        if (empty($FEED_TOKEN)) fail('feed token not configured', 500);
+        return ['ics_url' => baseUrl() . '?action=ics&token=' . rawurlencode($FEED_TOKEN)];
     }
 
     case 'export': {
