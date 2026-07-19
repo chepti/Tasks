@@ -50,9 +50,33 @@ const ENUMS = [
     'size'    => ['small','medium','big',''],
 ];
 
+const TMODE_LABELS = ['physical' => 'פיזי', 'online' => 'מקוון', 'hybrid' => 'היברידי'];
+
 function baseUrl() {
     $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
     return $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . ($_SERVER['SCRIPT_NAME'] ?? '/api/api.php');
+}
+
+/** URL of oauth_callback.php, which lives next to api.php. Must exactly match the
+ *  "Authorized redirect URI" registered on the Google OAuth client. */
+function gcalRedirectUri() {
+    $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+    $dir = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '/api/api.php')), '/');
+    return $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . $dir . '/oauth_callback.php';
+}
+
+/** Signs a short-lived OAuth "state" value so oauth_callback.php can trust it came from us,
+ *  without ever putting our app password in a URL (which Google would see as a Referer). */
+function gcalSignState($password) {
+    $ts = time();
+    return $ts . '.' . hash_hmac('sha256', (string)$ts, $password);
+}
+function gcalVerifyState($state, $password) {
+    $parts = explode('.', (string)$state, 2);
+    if (count($parts) !== 2) return false;
+    [$ts, $sig] = $parts;
+    if (!ctype_digit($ts) || abs(time() - (int)$ts) > 600) return false;
+    return hash_equals(hash_hmac('sha256', $ts, $password), $sig);
 }
 
 /* ---------- self-describing contract (no auth needed) ---------- */
@@ -112,6 +136,8 @@ function helpDoc() {
             'export'         => 'GET  — full backup JSON.',
             'feed_url'       => 'GET  — the private ICS calendar-subscription URL (for Google Calendar "add from URL").',
             'ics'            => 'GET  — ?token=<feed token> the iCalendar feed itself (text/calendar). Auth via feed token, not the password.',
+            'gcal_status'    => 'GET  — owner-only: whether two-way Google Calendar sync is connected.',
+            'gcal_sync'      => 'GET/POST — owner-only: pull calendar changes into trainings now. Training writes auto-push to Calendar when connected; agents do not need to call this.',
         ],
         'examples' => [
             'add a tagged task' =>
@@ -168,7 +194,6 @@ if ($action === 'ics') {
         return $out;
     };
 
-    $MODE = ['physical' => 'פיזי', 'online' => 'מקוון', 'hybrid' => 'היברידי'];
     $L = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//chepti//tasks//HE',
           'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', 'X-WR-CALNAME:הדרכות', 'X-WR-TIMEZONE:Asia/Jerusalem'];
 
@@ -189,7 +214,7 @@ if ($action === 'ics') {
             $L[] = 'DTSTART;TZID=Asia/Jerusalem:' . $date . 'T' . $from;
             $L[] = 'DTEND;TZID=Asia/Jerusalem:' . $date . 'T' . $to;
         }
-        $modeLabel = $MODE[$t['mode']] ?? '';
+        $modeLabel = TMODE_LABELS[$t['mode']] ?? '';
         $summary = trim(($modeLabel ? "[$modeLabel] " : '') . ($t['topic'] ?: 'הדרכה'));
         $L[] = $fold('SUMMARY:' . $esc($summary));
         if ($t['place']) $L[] = $fold('LOCATION:' . $esc($t['place']));
@@ -286,7 +311,11 @@ $db->exec("CREATE TABLE IF NOT EXISTS trainings (
     updated_at TEXT DEFAULT (datetime('now'))
 )");
 // migration: add columns to an already-existing trainings table (ignore if present)
-foreach (['mode' => "TEXT DEFAULT ''"] as $col => $decl) {
+foreach ([
+    'mode' => "TEXT DEFAULT ''",
+    'gcal_event_id' => "TEXT DEFAULT ''",   // linked Google Calendar event, once synced
+    'gcal_updated' => "TEXT DEFAULT ''",    // event's Google 'updated' timestamp we last saw (conflict check)
+] as $col => $decl) {
     try { $db->exec("ALTER TABLE trainings ADD COLUMN $col $decl"); } catch (Throwable $e) { /* exists */ }
 }
 
@@ -297,6 +326,14 @@ $db->exec("CREATE TABLE IF NOT EXISTS history (
     action TEXT NOT NULL,
     snapshot TEXT NOT NULL,
     at TEXT DEFAULT (datetime('now'))
+)");
+
+// key/value store for runtime state that isn't training/task data: OAuth tokens, the
+// chosen calendar id, last-sync bookkeeping. Deliberately separate from config.php,
+// which holds only the static app credentials (client id/secret).
+$db->exec("CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT DEFAULT ''
 )");
 
 /* ---------- helpers ---------- */
@@ -387,6 +424,309 @@ function updateEntity($db, $table, $entity, $data, $allowed, $action = 'update')
     return rowOrFail($db, $table, $id);
 }
 
+/* =====================================================================
+ * Google Calendar two-way sync.
+ *
+ * Every field of a training round-trips through the event's description as
+ * "[Label] value" blocks (multi-line values run until the next [Label]),
+ * plus a trailing hidden "TASKS-ID: n" line that links the event back to our
+ * row. Title/location/start/end map to native Calendar fields. An event
+ * created directly in Calendar (no TASKS-ID yet) is *adopted*: we create a
+ * training for it and write the id back onto the event.
+ *
+ * All of this is optional and self-disabling: every entry point checks
+ * gcalConfigured() first and quietly no-ops if OAuth hasn't been set up yet,
+ * so trainings work exactly as before until the owner connects a calendar.
+ * ===================================================================== */
+
+function getSetting($db, $key, $default = '') {
+    $st = $db->prepare("SELECT value FROM settings WHERE key = ?");
+    $st->execute([$key]);
+    $v = $st->fetchColumn();
+    return $v === false ? $default : $v;
+}
+function setSetting($db, $key, $value) {
+    $db->prepare("INSERT INTO settings (key, value) VALUES (?, ?)
+                  ON CONFLICT(key) DO UPDATE SET value = excluded.value")->execute([$key, (string)$value]);
+}
+
+function gcalConfigured($db) {
+    global $GCAL_CLIENT_ID, $GCAL_CLIENT_SECRET;
+    return !empty($GCAL_CLIENT_ID) && !empty($GCAL_CLIENT_SECRET) && getSetting($db, 'gcal_refresh_token') !== '';
+}
+
+/** Curl helper for Google's REST APIs. Throws ApiError with Google's message on failure. */
+function gcalHttp($method, $url, $token = null, $body = null, $isForm = false) {
+    $ch = curl_init($url);
+    $headers = [];
+    if ($token) $headers[] = 'Authorization: Bearer ' . $token;
+    curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $method);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 15);
+    if ($body !== null) {
+        if ($isForm) {
+            curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($body));
+            $headers[] = 'Content-Type: application/x-www-form-urlencoded';
+        } else {
+            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($body, JSON_UNESCAPED_UNICODE));
+            $headers[] = 'Content-Type: application/json';
+        }
+    }
+    curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+    $raw = curl_exec($ch);
+    $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $err = curl_error($ch);
+    curl_close($ch);
+    if ($raw === false) fail("google api network error: $err", 502);
+    $json = json_decode($raw, true);
+    if ($code >= 300) fail('google api error: ' . ($json['error']['message'] ?? $json['error_description'] ?? $raw), 502);
+    return $json;
+}
+
+/** Returns a live access token, refreshing via the stored refresh_token if the cached one expired. */
+function gcalAccessToken($db) {
+    global $GCAL_CLIENT_ID, $GCAL_CLIENT_SECRET;
+    if (!gcalConfigured($db)) return null;
+    $cached = getSetting($db, 'gcal_access_token');
+    $expires = (int)getSetting($db, 'gcal_token_expires', '0');
+    if ($cached && time() < $expires - 60) return $cached;
+
+    $refresh = getSetting($db, 'gcal_refresh_token');
+    $resp = gcalHttp('POST', 'https://oauth2.googleapis.com/token', null, [
+        'client_id' => $GCAL_CLIENT_ID, 'client_secret' => $GCAL_CLIENT_SECRET,
+        'refresh_token' => $refresh, 'grant_type' => 'refresh_token',
+    ], true);
+    setSetting($db, 'gcal_access_token', $resp['access_token']);
+    setSetting($db, 'gcal_token_expires', time() + (int)($resp['expires_in'] ?? 3000));
+    return $resp['access_token'];
+}
+
+const GCAL_SECTIONS = [
+    'mode'         => 'מקוון/פיזי',
+    'contact'      => 'איש קשר',
+    'pay'          => 'תשלום',
+    'pay_received' => 'תשלום התקבל',
+    'audience_num' => 'כמה אנשים',
+    'style'        => 'סגנון',
+    'audience'     => 'קהל וידע קודם',
+    'ideas'        => 'רעיונות',
+    'tools'        => 'כלים',
+    'message'      => 'מסר מרכזי',
+    'structure'    => 'מבנה מבוקש',
+    'equipment'    => 'ציוד למורים',
+    'slides_url'   => 'מצגת',
+    'recording_url'=> 'הקלטה',
+    'followups'    => 'פעולות משלימות',
+    'notes'        => 'הערות',
+];
+
+/** Builds the Calendar event body from a training row. */
+function gcalBuildEvent($t) {
+    $modeLabel = TMODE_LABELS[$t['mode']] ?? '';
+    $summary = trim(($modeLabel ? "[$modeLabel] " : '') . ($t['topic'] ?: 'הדרכה'));
+
+    $lines = [];
+    if ($t['contact_name'] || $t['contact_phone'] || $t['contact_email'] || $t['contact_role']) {
+        $lines[] = '[' . GCAL_SECTIONS['contact'] . '] ' . implode(' | ', array_filter([
+            $t['contact_name'], $t['contact_role'], $t['contact_phone'], $t['contact_email'],
+        ]));
+    }
+    if ($t['pay_amount'] || $t['pay_process']) {
+        $lines[] = '[' . GCAL_SECTIONS['pay'] . '] ' . implode(' | ', array_filter([$t['pay_amount'], $t['pay_process']]));
+    }
+    $lines[] = '[' . GCAL_SECTIONS['pay_received'] . '] ' . ($t['pay_received'] == 1 ? 'כן' : 'לא');
+    if ($t['people_count']) $lines[] = '[' . GCAL_SECTIONS['audience_num'] . '] ' . $t['people_count'];
+    if ($t['style']) $lines[] = '[' . GCAL_SECTIONS['style'] . '] ' . $t['style'];
+    foreach (['audience','ideas','tools','message','structure','equipment','slides_url','recording_url'] as $f) {
+        if (!empty($t[$f])) $lines[] = '[' . GCAL_SECTIONS[$f] . "]\n" . $t[$f];
+    }
+    $fu = array_filter([
+        $t['fu_recording'] == 1 ? 'הקלטה' : null,
+        $t['fu_whatsapp'] == 1 ? 'וואטסאפ' : null,
+        $t['fu_takeaways'] == 1 ? 'תובנות' : null,
+    ]);
+    if ($fu) $lines[] = '[' . GCAL_SECTIONS['followups'] . '] ' . implode(', ', $fu);
+    if ($t['notes']) $lines[] = '[' . GCAL_SECTIONS['notes'] . "]\n" . $t['notes'];
+    $lines[] = '';
+    $lines[] = 'TASKS-ID: ' . $t['id'];
+
+    $event = [
+        'summary' => $summary,
+        'description' => implode("\n", $lines),
+    ];
+    if ($t['place']) $event['location'] = $t['place'];
+    if ($t['date']) {
+        if ($t['time_from']) {
+            $end = $t['time_to'] ?: sprintf('%02d:%02d', ((int)substr($t['time_from'], 0, 2) + 2) % 24, (int)substr($t['time_from'], 3, 2));
+            $event['start'] = ['dateTime' => $t['date'] . 'T' . $t['time_from'] . ':00', 'timeZone' => 'Asia/Jerusalem'];
+            $event['end'] = ['dateTime' => $t['date'] . 'T' . $end . ':00', 'timeZone' => 'Asia/Jerusalem'];
+        } else {
+            $endDate = gmdate('Y-m-d', strtotime($t['date'] . ' +1 day'));
+            $event['start'] = ['date' => $t['date']];
+            $event['end'] = ['date' => $endDate];
+        }
+    }
+    return $event;
+}
+
+/** Parses an incoming Calendar event back into training fields. Returns [fields, tasksId|null]. */
+function gcalParseEvent($event) {
+    $summary = $event['summary'] ?? '';
+    $mode = '';
+    if (preg_match('/^\[([^\]]+)\]\s*(.*)$/su', $summary, $m)) {
+        $label = trim($m[1]);
+        $found = array_search($label, TMODE_LABELS);
+        if ($found !== false) { $mode = $found; $summary = $m[2]; }
+    }
+
+    $desc = $event['description'] ?? '';
+    $tasksId = null;
+    if (preg_match('/TASKS-ID:\s*(\d+)/', $desc, $m)) $tasksId = (int)$m[1];
+    $desc = preg_replace('/\s*TASKS-ID:\s*\d+\s*$/', '', $desc);
+
+    $labelToField = array_flip(GCAL_SECTIONS);
+    $sections = [];
+    $cur = null;
+    foreach (preg_split('/\r?\n/', $desc) as $line) {
+        if (preg_match('/^\[([^\]]+)\]\s*(.*)$/u', $line, $m)) {
+            $cur = trim($m[1]);
+            $sections[$cur] = trim($m[2]);
+        } elseif ($cur !== null) {
+            $sections[$cur] = trim($sections[$cur] . "\n" . $line);
+        }
+    }
+
+    $fields = ['topic' => trim($summary), 'mode' => $mode];
+    if (!empty($event['location'])) $fields['place'] = $event['location'];
+    $start = $event['start']['dateTime'] ?? $event['start']['date'] ?? null;
+    if ($start) {
+        $fields['date'] = substr($start, 0, 10);
+        $fields['time_from'] = isset($event['start']['dateTime']) ? substr($start, 11, 5) : '';
+        $end = $event['end']['dateTime'] ?? null;
+        $fields['time_to'] = $end ? substr($end, 11, 5) : '';
+    }
+    foreach ($sections as $label => $val) {
+        $f = $labelToField[$label] ?? null;
+        if ($f === 'contact') {
+            $parts = array_map('trim', explode('|', $val));
+            $fields['contact_name'] = $parts[0] ?? ''; $fields['contact_role'] = $parts[1] ?? '';
+            $fields['contact_phone'] = $parts[2] ?? ''; $fields['contact_email'] = $parts[3] ?? '';
+        } elseif ($f === 'pay') {
+            $parts = array_map('trim', explode('|', $val));
+            $fields['pay_amount'] = $parts[0] ?? ''; $fields['pay_process'] = $parts[1] ?? '';
+        } elseif ($f === 'pay_received') {
+            $fields['pay_received'] = (mb_strpos($val, 'כן') !== false) ? 1 : 0;
+        } elseif ($f === 'audience_num') {
+            $fields['people_count'] = $val;
+        } elseif ($f === 'followups') {
+            $fields['fu_recording'] = (mb_strpos($val, 'הקלטה') !== false) ? 1 : 0;
+            $fields['fu_whatsapp'] = (mb_strpos($val, 'וואטסאפ') !== false) ? 1 : 0;
+            $fields['fu_takeaways'] = (mb_strpos($val, 'תובנות') !== false) ? 1 : 0;
+        } elseif ($f) {
+            $fields[$f] = $val;
+        }
+    }
+    if (!$sections && trim($desc) !== '') $fields['notes'] = trim($desc);
+    return [$fields, $tasksId];
+}
+
+/** Push one training to its Calendar event: create if new, update if linked. Silently no-ops if not configured. */
+function gcalPushTraining($db, $trainingId) {
+    if (!gcalConfigured($db)) return;
+    $token = gcalAccessToken($db);
+    $calId = getSetting($db, 'gcal_calendar_id');
+    if (!$token || !$calId) return;
+    $t = rowOrFail($db, 'trainings', $trainingId);
+    $event = gcalBuildEvent($t);
+    $base = 'https://www.googleapis.com/calendar/v3/calendars/' . rawurlencode($calId) . '/events';
+    if (!empty($t['gcal_event_id'])) {
+        $resp = gcalHttp('PATCH', $base . '/' . rawurlencode($t['gcal_event_id']), $token, $event);
+    } else {
+        $resp = gcalHttp('POST', $base, $token, $event);
+    }
+    $db->prepare("UPDATE trainings SET gcal_event_id = ?, gcal_updated = ? WHERE id = ?")
+       ->execute([$resp['id'], $resp['updated'] ?? '', $trainingId]);
+}
+
+/** Delete the linked Calendar event for a training, if any. Silently no-ops on any failure. */
+function gcalDeleteEvent($db, $eventId) {
+    if (!gcalConfigured($db) || !$eventId) return;
+    try {
+        $token = gcalAccessToken($db);
+        $calId = getSetting($db, 'gcal_calendar_id');
+        if ($token && $calId) {
+            gcalHttp('DELETE', 'https://www.googleapis.com/calendar/v3/calendars/' . rawurlencode($calId) . '/events/' . rawurlencode($eventId), $token);
+        }
+    } catch (Throwable $e) { /* event already gone or unreachable — not fatal */ }
+}
+
+/** Pulls events changed since the last sync, updates/creates/adopts trainings. Returns a small summary. */
+function gcalPullChanges($db) {
+    if (!gcalConfigured($db)) return ['skipped' => 'not configured'];
+    $token = gcalAccessToken($db);
+    $calId = getSetting($db, 'gcal_calendar_id');
+    if (!$token || !$calId) return ['skipped' => 'no calendar selected'];
+
+    $updatedMin = getSetting($db, 'gcal_last_sync');
+    $base = 'https://www.googleapis.com/calendar/v3/calendars/' . rawurlencode($calId) . '/events';
+    $params = ['singleEvents' => 'true', 'showDeleted' => 'true', 'maxResults' => 250];
+    if ($updatedMin) $params['updatedMin'] = $updatedMin; else $params['timeMin'] = gmdate('Y-m-d\TH:i:s\Z', strtotime('-3 months'));
+
+    $created = 0; $updated = 0; $adopted = 0; $skippedCancelled = 0;
+    $pageToken = null;
+    $syncStamp = gmdate('Y-m-d\TH:i:s.v\Z');
+    do {
+        if ($pageToken) $params['pageToken'] = $pageToken;
+        $resp = gcalHttp('GET', $base . '?' . http_build_query($params), $token);
+        foreach ($resp['items'] ?? [] as $event) {
+            if (($event['status'] ?? '') === 'cancelled') { $skippedCancelled++; continue; }
+            [$fields, $tasksId] = gcalParseEvent($event);
+
+            $localId = null;
+            if ($tasksId) {
+                $st = $db->prepare("SELECT id FROM trainings WHERE id = ?"); $st->execute([$tasksId]);
+                if ($st->fetchColumn()) $localId = $tasksId;
+            }
+            if (!$localId) {
+                $st = $db->prepare("SELECT id FROM trainings WHERE gcal_event_id = ?"); $st->execute([$event['id']]);
+                $localId = $st->fetchColumn() ?: null;
+            }
+
+            if ($localId) {
+                $row = rowOrFail($db, 'trainings', $localId);
+                if (($event['updated'] ?? '') === $row['gcal_updated']) continue; // our own last push, nothing new
+                $sets = []; $vals = [];
+                foreach (TRAINING_FIELDS as $f) if (array_key_exists($f, $fields)) { $sets[] = "$f=?"; $vals[] = $fields[$f]; }
+                $sets[] = "gcal_event_id=?"; $vals[] = $event['id'];
+                $sets[] = "gcal_updated=?"; $vals[] = $event['updated'] ?? '';
+                $sets[] = "updated_at=datetime('now')";
+                $vals[] = $localId;
+                $db->prepare("UPDATE trainings SET " . implode(',', $sets) . " WHERE id=?")->execute($vals);
+                $updated++;
+            } else {
+                $cols = ['gcal_event_id', 'gcal_updated']; $vals = [$event['id'], $event['updated'] ?? ''];
+                foreach (TRAINING_FIELDS as $f) if (array_key_exists($f, $fields)) { $cols[] = $f; $vals[] = $fields[$f]; }
+                $ph = implode(',', array_fill(0, count($cols), '?'));
+                $db->prepare("INSERT INTO trainings (" . implode(',', $cols) . ") VALUES ($ph)")->execute($vals);
+                $newId = (int)$db->lastInsertId();
+                logHistory($db, 'training', $newId, 'create', rowOrFail($db, 'trainings', $newId));
+                // adopt: write the new id back onto the event so future edits match by TASKS-ID
+                try {
+                    $adoptedEvent = gcalHttp('PATCH',
+                        'https://www.googleapis.com/calendar/v3/calendars/' . rawurlencode($calId) . '/events/' . rawurlencode($event['id']),
+                        $token, ['description' => rtrim($event['description'] ?? '') . "\n\nTASKS-ID: $newId"]);
+                    $db->prepare("UPDATE trainings SET gcal_updated=? WHERE id=?")->execute([$adoptedEvent['updated'] ?? '', $newId]);
+                } catch (Throwable $e) { /* adoption is best-effort */ }
+                $created++; $adopted++;
+            }
+        }
+        $pageToken = $resp['nextPageToken'] ?? null;
+    } while ($pageToken);
+
+    setSetting($db, 'gcal_last_sync', $syncStamp);
+    return ['created' => $created, 'updated' => $updated, 'adopted' => $adopted, 'cancelled_seen' => $skippedCancelled];
+}
+
 function projectMap($db) {
     $map = [];
     foreach ($db->query("SELECT id, name FROM projects")->fetchAll(PDO::FETCH_ASSOC) as $p) {
@@ -456,6 +796,7 @@ function dispatch($db, $action, $data) {
             $vals[] = $id;
             $db->prepare("UPDATE trainings SET " . implode(', ', $sets) . " WHERE id = ?")->execute($vals);
             logHistory($db, 'training', $id, 'update', $before);
+            try { gcalPushTraining($db, $id); } catch (Throwable $e) { /* sync is best-effort, never blocks the save */ }
             return ['training' => rowOrFail($db, 'trainings', $id)];
         }
         $cols = []; $vals = [];
@@ -465,15 +806,18 @@ function dispatch($db, $action, $data) {
         if (!$cols) fail('no fields');
         $ph = implode(',', array_fill(0, count($cols), '?'));
         $db->prepare("INSERT INTO trainings (" . implode(',', $cols) . ") VALUES ($ph)")->execute($vals);
-        $row = rowOrFail($db, 'trainings', (int)$db->lastInsertId());
+        $newId = (int)$db->lastInsertId();
+        $row = rowOrFail($db, 'trainings', $newId);
         logHistory($db, 'training', $row['id'], 'create', $row);
-        return ['training' => $row];
+        try { gcalPushTraining($db, $newId); } catch (Throwable $e) { /* best-effort */ }
+        return ['training' => rowOrFail($db, 'trainings', $newId)];
     }
 
     case 'training_delete': {
         $id = (int)($data['id'] ?? 0);
         $before = rowOrFail($db, 'trainings', $id);
         logHistory($db, 'training', $id, 'delete', $before);
+        gcalDeleteEvent($db, $before['gcal_event_id']);
         $db->prepare("DELETE FROM trainings WHERE id = ?")->execute([$id]);
         return ['deleted' => $id];
     }
@@ -581,6 +925,68 @@ function dispatch($db, $action, $data) {
         global $FEED_TOKEN;
         if (empty($FEED_TOKEN)) fail('feed token not configured', 500);
         return ['ics_url' => baseUrl() . '?action=ics&token=' . rawurlencode($FEED_TOKEN)];
+    }
+
+    case 'gcal_status': {
+        global $GCAL_CLIENT_ID, $GCAL_CLIENT_SECRET;
+        return [
+            'has_credentials' => !empty($GCAL_CLIENT_ID) && !empty($GCAL_CLIENT_SECRET),
+            'connected' => gcalConfigured($db),
+            'calendar_id' => getSetting($db, 'gcal_calendar_id'),
+            'last_sync' => getSetting($db, 'gcal_last_sync'),
+        ];
+    }
+
+    case 'gcal_auth_url': {
+        global $GCAL_CLIENT_ID, $PASSWORD;
+        if (empty($GCAL_CLIENT_ID)) fail('Google client id/secret not set in config.php yet', 400);
+        $params = [
+            'client_id' => $GCAL_CLIENT_ID,
+            'redirect_uri' => gcalRedirectUri(),
+            'response_type' => 'code',
+            'scope' => 'https://www.googleapis.com/auth/calendar',
+            'access_type' => 'offline',
+            'prompt' => 'consent',
+            'state' => gcalSignState($PASSWORD),
+        ];
+        return ['auth_url' => 'https://accounts.google.com/o/oauth2/v2/auth?' . http_build_query($params)];
+    }
+
+    case 'gcal_calendars': {
+        if (!gcalConfigured($db)) fail('not connected yet', 400);
+        $token = gcalAccessToken($db);
+        $resp = gcalHttp('GET', 'https://www.googleapis.com/calendar/v3/users/me/calendarList?minAccessRole=writer', $token);
+        $list = array_map(function ($c) { return ['id' => $c['id'], 'name' => $c['summary']]; }, $resp['items'] ?? []);
+        return ['calendars' => $list];
+    }
+
+    case 'gcal_create_calendar': {
+        if (!gcalConfigured($db)) fail('not connected yet', 400);
+        $name = trim($data['name'] ?? 'הדרכות');
+        $token = gcalAccessToken($db);
+        $resp = gcalHttp('POST', 'https://www.googleapis.com/calendar/v3/calendars', $token, [
+            'summary' => $name, 'timeZone' => 'Asia/Jerusalem',
+        ]);
+        setSetting($db, 'gcal_calendar_id', $resp['id']);
+        return ['calendar' => ['id' => $resp['id'], 'name' => $resp['summary']]];
+    }
+
+    case 'gcal_set_calendar': {
+        $id = trim($data['calendar_id'] ?? '');
+        if (!$id) fail('calendar_id required');
+        setSetting($db, 'gcal_calendar_id', $id);
+        setSetting($db, 'gcal_last_sync', ''); // force a full resync against the newly chosen calendar
+        return ['ok' => true];
+    }
+
+    case 'gcal_sync':
+        return gcalPullChanges($db);
+
+    case 'gcal_disconnect': {
+        foreach (['gcal_refresh_token','gcal_access_token','gcal_token_expires','gcal_calendar_id','gcal_last_sync'] as $k) {
+            $db->prepare("DELETE FROM settings WHERE key = ?")->execute([$k]);
+        }
+        return ['ok' => true];
     }
 
     case 'export': {

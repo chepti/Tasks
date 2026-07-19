@@ -1389,34 +1389,116 @@ async function openHistoryModal() {
 
 async function openGcalModal() {
   openModal(`<h3>${ic('calendar', 20)} סנכרון ליומן גוגל</h3><p style="color:var(--ink-soft)">טוען...</p>`);
-  let url;
-  try { url = (await api('feed_url')).ics_url; }
-  catch (e) { openModal(`<h3>${ic('calendar', 20)} סנכרון ליומן גוגל</h3><p style="color:#D8402F">צריך חיבור לרשת כדי לקבל את הקישור.</p><div class="sheet-actions"><button class="btn btn-ghost" id="g-close" style="flex:1">סגירה</button></div>`); $('#g-close').onclick = closeModal; return; }
+  let status, feedUrl;
+  try {
+    [status, feedUrl] = await Promise.all([api('gcal_status'), api('feed_url').then(r => r.ics_url).catch(() => null)]);
+  } catch (e) {
+    openModal(`<h3>${ic('calendar', 20)} סנכרון ליומן גוגל</h3><p style="color:#D8402F">צריך חיבור לרשת.</p><div class="sheet-actions"><button class="btn btn-ghost" id="g-close" style="flex:1">סגירה</button></div>`);
+    $('#g-close').onclick = closeModal;
+    return;
+  }
+
+  let calendarsHtml = '';
+  if (status.connected && !status.calendar_id) {
+    try {
+      const { calendars } = await api('gcal_calendars');
+      calendarsHtml = `
+        <div class="gcal-box">
+          <div>
+            <b>איזה יומן משמש לסנכרון?</b>
+            <div class="pill-row" style="margin-top:8px">
+              ${calendars.map(c => `<button type="button" class="pill-toggle" data-pick-cal="${esc(c.id)}">${ic('calendar', 13)} ${esc(c.name)}</button>`).join('')}
+            </div>
+            <button class="btn btn-ghost" id="gcal-new-cal" style="margin-top:10px">${ic('plus', 15)} ליצור יומן חדש "הדרכות"</button>
+          </div>
+        </div>`;
+    } catch (e) { calendarsHtml = `<p style="color:#D8402F;font-size:.85rem">שגיאה בטעינת רשימת היומנים: ${esc(e.message)}</p>`; }
+  }
+
+  const twoWaySection = !status.has_credentials ? `
+    <div class="gcal-box">
+      <div class="gcal-num">${ic('zap', 15)}</div>
+      <div>
+        <b>סנכרון דו-כיווני (עריכה משני הצדדים)</b><br>
+        <span style="color:var(--ink-soft);font-size:.85rem">
+          עוד לא מוגדר. צריך ליצור OAuth Client מסוג "Web application" בפרויקט Google Cloud קיים,
+          עם Authorized redirect URI בדיוק כזה:
+        </span>
+        <div class="url-row" style="margin-top:8px">
+          <input type="text" readonly dir="ltr" value="${location.origin}/tasks/api/oauth_callback.php">
+          <button class="icon-btn" data-copy="${location.origin}/tasks/api/oauth_callback.php" title="העתקה">${ic('copy', 15)}</button>
+        </div>
+        <span style="color:var(--ink-faint);font-size:.78rem">את ה-Client ID וה-Client Secret מוסיפים ל-config.php בשרת.</span>
+      </div>
+    </div>`
+  : !status.connected ? `
+    <div class="gcal-box">
+      <div class="gcal-num">${ic('zap', 15)}</div>
+      <div>
+        <b>סנכרון דו-כיווני (עריכה משני הצדדים)</b><br>
+        <span style="color:var(--ink-soft);font-size:.85rem">שינוי ביומן גוגל יעדכן כאן, ולהפך — כולל מהנייד.</span>
+        <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-primary" id="gcal-connect">${ic('calendar', 15)} להתחבר ליומן גוגל</button>
+          <button class="btn btn-ghost" id="gcal-refresh-status">${ic('refresh', 15)} כבר אישרתי — לרענן</button>
+        </div>
+      </div>
+    </div>`
+  : `
+    <div class="gcal-box">
+      <div class="gcal-num">${ic('check', 15)}</div>
+      <div style="flex:1">
+        <b>סנכרון דו-כיווני מחובר</b><br>
+        ${status.calendar_id ? `
+          <span style="color:var(--ink-soft);font-size:.85rem">יומן: <code style="direction:ltr;display:inline-block">${esc(status.calendar_id)}</code></span><br>
+          <span style="color:var(--ink-faint);font-size:.78rem">${status.last_sync ? 'סנכרון אחרון: ' + timeAgo(status.last_sync.replace('T',' ').slice(0,19)+'Z') : 'עוד לא היה סנכרון'}</span>
+          <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-primary" id="gcal-sync-now">${ic('refresh', 15)} סנכרון עכשיו</button>
+            <button class="btn btn-danger" id="gcal-disconnect">${ic('trash', 15)} ניתוק</button>
+          </div>` : calendarsHtml}
+      </div>
+    </div>`;
+
   openModal(`
     <h3>${ic('calendar', 20)} סנכרון ליומן גוגל</h3>
-    <p style="color:var(--ink-soft);font-size:.9rem;margin-bottom:6px">שתי דרכים:</p>
+    ${twoWaySection}
+    <div class="sheet-divider"><span>${ic('monitor', 13)} או פשוט יותר: מנוי לקריאה בלבד</span></div>
+    ${feedUrl ? `
     <div class="gcal-box">
-      <div class="gcal-num">1</div>
       <div>
-        <b>מנוי אוטומטי (מומלץ)</b> — כל ההדרכות מופיעות ביומן ומתעדכנות לבד.<br>
-        <span style="color:var(--ink-soft);font-size:.85rem">ביומן גוגל במחשב: <b>הגדרות → הוספת יומן → מכתובת URL</b>, והדביקי את הקישור. גוגל מרענן כל כמה שעות.</span>
+        <b>מנוי לצפייה</b> — כל ההדרכות מופיעות ביומן, בלי אפשרות עריכה שם.<br>
+        <span style="color:var(--ink-soft);font-size:.85rem">ביומן גוגל: <b>הגדרות → הוספת יומן → מכתובת URL</b>, והדביקי את הקישור.</span>
         <div class="url-row" style="margin-top:10px">
-          <input type="text" id="gcal-url" value="${esc(url)}" readonly dir="ltr">
+          <input type="text" id="gcal-url" value="${esc(feedUrl)}" readonly dir="ltr">
           <button class="icon-btn" id="gcal-copy" title="העתקה">${ic('copy', 16)}</button>
         </div>
       </div>
-    </div>
-    <div class="gcal-box">
-      <div class="gcal-num">2</div>
-      <div>
-        <b>הוספה מיידית</b> — לכל הדרכה יש כפתור "הוספה ליומן גוגל" (בכרטיס למעלה ובטופס העריכה) שפותח את האירוע מוכן. מושלם למובייל ולהדרכה קרובה.
-      </div>
-    </div>
-    <p style="color:var(--ink-faint);font-size:.78rem;margin-top:10px">הקישור פרטי — כל מי שיש לו אותו יכול לראות את לוח ההדרכות (בקריאה בלבד). אפשר לאפס אותו בקובץ config בשרת.</p>
-    <div class="sheet-actions"><button class="btn btn-primary" id="gcal-open" style="flex:1">${ic('calendar', 16)} לפתוח את יומן גוגל</button><button class="btn btn-ghost" id="g-close">סגירה</button></div>`);
-  $('#gcal-copy').onclick = () => copyText(url);
-  $('#gcal-url').onclick = () => $('#gcal-url').select();
-  $('#gcal-open').onclick = () => window.open('https://calendar.google.com/calendar/u/0/r/settings/addbyurl', '_blank', 'noopener');
+    </div>` : ''}
+    <div class="sheet-actions"><button class="btn btn-ghost" id="g-close" style="flex:1">סגירה</button></div>`);
+
+  const reopen = () => openGcalModal();
+  $$('#modal [data-copy]').forEach(b => b.onclick = () => copyText(b.dataset.copy));
+  if ($('#gcal-copy')) { $('#gcal-copy').onclick = () => copyText(feedUrl); $('#gcal-url').onclick = () => $('#gcal-url').select(); }
+  if ($('#gcal-connect')) $('#gcal-connect').onclick = async () => {
+    try { const { auth_url } = await api('gcal_auth_url'); window.open(auth_url, '_blank', 'noopener'); }
+    catch (e) { toast('אופס — ' + e.message); }
+  };
+  if ($('#gcal-refresh-status')) $('#gcal-refresh-status').onclick = reopen;
+  if ($('#gcal-new-cal')) $('#gcal-new-cal').onclick = async () => {
+    try { await api('gcal_create_calendar', { name: 'הדרכות' }); toast('נוצר יומן "הדרכות"'); reopen(); }
+    catch (e) { toast('אופס — ' + e.message); }
+  };
+  $$('#modal [data-pick-cal]').forEach(b => b.onclick = async () => {
+    try { await api('gcal_set_calendar', { calendar_id: b.dataset.pickCal }); toast('היומן נבחר, מסנכרן...'); await api('gcal_sync'); await reload(); reopen(); }
+    catch (e) { toast('אופס — ' + e.message); }
+  });
+  if ($('#gcal-sync-now')) $('#gcal-sync-now').onclick = async () => {
+    try { const r = await api('gcal_sync'); await reload(); toast(`סונכרן: ${r.created||0} חדשות, ${r.updated||0} עודכנו`); reopen(); }
+    catch (e) { toast('אופס — ' + e.message); }
+  };
+  if ($('#gcal-disconnect')) $('#gcal-disconnect').onclick = async () => {
+    try { await api('gcal_disconnect'); toast('נותק'); reopen(); }
+    catch (e) { toast('אופס — ' + e.message); }
+  };
   $('#g-close').onclick = closeModal;
 }
 

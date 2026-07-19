@@ -9,5 +9,9 @@ $PASSWORD = 'CHANGE-ME';
 // לא נותן הרשאות עריכה. אפשר להחליף אותו כדי לבטל מנויים קיימים.
 $FEED_TOKEN = 'CHANGE-ME-TOO';
 
+// סנכרון דו-כיווני ליומן גוגל (OAuth) — אופציונלי. ריקים = הסנכרון פשוט לא פעיל.
+$GCAL_CLIENT_ID = '';
+$GCAL_CLIENT_SECRET = '';
+
 // מיקום קובץ הנתונים
 $DB_PATH = __DIR__ . '/tasks.db';
