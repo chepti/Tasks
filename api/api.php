@@ -37,6 +37,11 @@ function out($data) { echo json_encode($data, JSON_UNESCAPED_UNICODE); exit; }
 
 const TASK_FIELDS = ['title','notes','project_id','status','context','energy','size','is_next','due_date','snoozed_until','completed_at','sort_order'];
 const PROJECT_FIELDS = ['name','color','notes','status','sort_order'];
+const TRAINING_FIELDS = ['client_id','topic','place','date','time_from','time_to',
+    'contact_name','contact_phone','contact_email','contact_role',
+    'pay_amount','pay_process','pay_received',
+    'people_count','audience','style','ideas','tools','equipment','structure','message',
+    'slides_url','recording_url','fu_recording','fu_whatsapp','fu_takeaways','notes'];
 
 const ENUMS = [
     'status'  => ['inbox','next','waiting','someday','done','dropped'],
@@ -73,10 +78,21 @@ function helpDoc() {
             'due_date' => 'YYYY-MM-DD or ""',
             'snoozed_until' => 'YYYY-MM-DD HH:MM:SS (UTC) or "" — hidden from "now" until then',
         ],
+        'training_fields' => [
+            'topic' => 'subject of the session', 'place' => 'venue name',
+            'date' => 'YYYY-MM-DD', 'time_from' => 'HH:MM', 'time_to' => 'HH:MM',
+            'contact_name / contact_phone / contact_email / contact_role' => 'contact person details',
+            'pay_amount / pay_process' => 'payment sum and process', 'pay_received' => '0/1',
+            'people_count' => 'expected attendance', 'audience' => 'audience traits, prior knowledge, what they already covered',
+            'style' => 'workshop / inspiration / lecture...', 'ideas' => 'session ideas', 'tools' => 'tools to teach',
+            'equipment' => 'equipment teachers need', 'structure' => 'requested structure', 'message' => 'requested core message',
+            'slides_url / recording_url' => 'links', 'fu_recording / fu_whatsapp / fu_takeaways' => '0/1 follow-up checklist',
+            'notes' => 'free text', 'client_id' => 'optional client-generated id for idempotent offline sync',
+        ],
         'targeting_a_task' => 'For update/complete/reopen/delete pass {"id":N} OR {"match":"substring of the title"}. If "match" is ambiguous you get HTTP 409 with a candidates list — refine or use the id.',
         'actions' => [
             'help'           => 'GET  — this document (no auth).',
-            'state'          => 'GET  — compact snapshot: projects + open tasks (token-cheap). Best first call.',
+            'state'          => 'GET  — compact snapshot: projects + open tasks + upcoming trainings (token-cheap). Best first call.',
             'all'            => 'GET  — full dump { projects, tasks } including completed.',
             'task_create'    => 'POST — create one task. Body = task fields (title required).',
             'task_update'    => 'POST — { id|match, ...fields to change }.',
@@ -87,6 +103,8 @@ function helpDoc() {
             'project_create' => 'POST — { name, color?, notes?, status? }.',
             'project_update' => 'POST — { id, ...fields }.',
             'project_delete' => 'POST — { id } (archives it).',
+            'training_upsert'=> 'POST — create/update a training session. Update by {id}, or by {client_id} if it exists, else insert. See training_fields.',
+            'training_delete'=> 'POST — { id } (snapshot kept for restore).',
             'ops'            => 'POST — { ops:[ {action, ...}, ... ] } run in order; returns per-op ok/error. One round-trip for many changes.',
             'history'        => 'GET  — ?limit=100 recent changes with before-snapshots.',
             'restore'        => 'POST — { history_id } revert an item to that snapshot.',
@@ -151,6 +169,38 @@ $db->exec("CREATE TABLE IF NOT EXISTS tasks (
     snoozed_until TEXT DEFAULT '',
     completed_at TEXT DEFAULT '',
     sort_order INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+)");
+$db->exec("CREATE TABLE IF NOT EXISTS trainings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    client_id TEXT DEFAULT '',              -- offline-created id, for idempotent upsert
+    topic TEXT DEFAULT '',
+    place TEXT DEFAULT '',
+    date TEXT DEFAULT '',                   -- YYYY-MM-DD
+    time_from TEXT DEFAULT '',
+    time_to TEXT DEFAULT '',
+    contact_name TEXT DEFAULT '',
+    contact_phone TEXT DEFAULT '',
+    contact_email TEXT DEFAULT '',
+    contact_role TEXT DEFAULT '',
+    pay_amount TEXT DEFAULT '',
+    pay_process TEXT DEFAULT '',
+    pay_received INTEGER DEFAULT 0,
+    people_count TEXT DEFAULT '',
+    audience TEXT DEFAULT '',
+    style TEXT DEFAULT '',
+    ideas TEXT DEFAULT '',
+    tools TEXT DEFAULT '',
+    equipment TEXT DEFAULT '',
+    structure TEXT DEFAULT '',
+    message TEXT DEFAULT '',
+    slides_url TEXT DEFAULT '',
+    recording_url TEXT DEFAULT '',
+    fu_recording INTEGER DEFAULT 0,
+    fu_whatsapp INTEGER DEFAULT 0,
+    fu_takeaways INTEGER DEFAULT 0,
+    notes TEXT DEFAULT '',
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
 )");
@@ -278,9 +328,12 @@ function dispatch($db, $action, $data) {
         $tasks = $db->query("SELECT * FROM tasks WHERE status NOT IN ('done','dropped') ORDER BY is_next DESC, sort_order, id")->fetchAll(PDO::FETCH_ASSOC);
         $open = array_map(function ($t) use ($projMap) { return compactTask($t, $projMap); }, $tasks);
         $doneToday = $db->query("SELECT COUNT(*) FROM tasks WHERE status='done' AND completed_at >= '" . gmdate('Y-m-d') . " 00:00:00'")->fetchColumn();
+        $st = $db->prepare("SELECT id, topic, place, date, time_from, time_to FROM trainings WHERE date >= ? ORDER BY date LIMIT 5");
+        $st->execute([gmdate('Y-m-d')]);
         return [
             'projects' => array_map(function ($p) { return ['id' => (int)$p['id'], 'name' => $p['name'], 'status' => $p['status']]; }, $projects),
             'open_tasks' => $open,
+            'upcoming_trainings' => $st->fetchAll(PDO::FETCH_ASSOC),
             'counts' => ['open' => count($open), 'done_today' => (int)$doneToday],
             'now' => gmdate('Y-m-d H:i:s'),
         ];
@@ -290,8 +343,53 @@ function dispatch($db, $action, $data) {
         return [
             'projects' => $db->query("SELECT * FROM projects ORDER BY sort_order, id")->fetchAll(PDO::FETCH_ASSOC),
             'tasks' => $db->query("SELECT * FROM tasks ORDER BY sort_order, id")->fetchAll(PDO::FETCH_ASSOC),
+            'trainings' => $db->query("SELECT * FROM trainings ORDER BY CASE WHEN date='' THEN 1 ELSE 0 END, date, id")->fetchAll(PDO::FETCH_ASSOC),
             'now' => gmdate('Y-m-d H:i:s'),
         ];
+    }
+
+    case 'training_upsert': {
+        // Update by id; else by client_id (idempotent for offline retries); else insert.
+        $id = 0;
+        if (!empty($data['id']) && is_numeric($data['id'])) {
+            $id = (int)$data['id'];
+        } elseif (!empty($data['client_id'])) {
+            $st = $db->prepare("SELECT id FROM trainings WHERE client_id = ? LIMIT 1");
+            $st->execute([$data['client_id']]);
+            $id = (int)$st->fetchColumn();
+        }
+        if ($id) {
+            $data['id'] = $id;
+            $sets = []; $vals = [];
+            foreach (TRAINING_FIELDS as $f) {
+                if (array_key_exists($f, $data)) { $sets[] = "$f = ?"; $vals[] = $data[$f]; }
+            }
+            if (!$sets) fail('no fields to update');
+            $before = rowOrFail($db, 'trainings', $id);
+            $sets[] = "updated_at = datetime('now')";
+            $vals[] = $id;
+            $db->prepare("UPDATE trainings SET " . implode(', ', $sets) . " WHERE id = ?")->execute($vals);
+            logHistory($db, 'training', $id, 'update', $before);
+            return ['training' => rowOrFail($db, 'trainings', $id)];
+        }
+        $cols = []; $vals = [];
+        foreach (TRAINING_FIELDS as $f) {
+            if (array_key_exists($f, $data)) { $cols[] = $f; $vals[] = $data[$f]; }
+        }
+        if (!$cols) fail('no fields');
+        $ph = implode(',', array_fill(0, count($cols), '?'));
+        $db->prepare("INSERT INTO trainings (" . implode(',', $cols) . ") VALUES ($ph)")->execute($vals);
+        $row = rowOrFail($db, 'trainings', (int)$db->lastInsertId());
+        logHistory($db, 'training', $row['id'], 'create', $row);
+        return ['training' => $row];
+    }
+
+    case 'training_delete': {
+        $id = (int)($data['id'] ?? 0);
+        $before = rowOrFail($db, 'trainings', $id);
+        logHistory($db, 'training', $id, 'delete', $before);
+        $db->prepare("DELETE FROM trainings WHERE id = ?")->execute([$id]);
+        return ['deleted' => $id];
     }
 
     case 'task_create':
@@ -373,8 +471,10 @@ function dispatch($db, $action, $data) {
         $h = rowOrFail($db, 'history', $hid);
         $snap = json_decode($h['snapshot'], true);
         if (!$snap || empty($snap['id'])) fail('bad snapshot');
-        $table = $h['entity'] === 'project' ? 'projects' : 'tasks';
-        $allowed = $h['entity'] === 'project' ? PROJECT_FIELDS : TASK_FIELDS;
+        $tables = ['project' => 'projects', 'training' => 'trainings', 'task' => 'tasks'];
+        $fields = ['project' => PROJECT_FIELDS, 'training' => TRAINING_FIELDS, 'task' => TASK_FIELDS];
+        $table = $tables[$h['entity']] ?? 'tasks';
+        $allowed = $fields[$h['entity']] ?? TASK_FIELDS;
         $st = $db->prepare("SELECT * FROM $table WHERE id = ?");
         $st->execute([$snap['id']]);
         if ($st->fetch(PDO::FETCH_ASSOC)) {
@@ -396,6 +496,7 @@ function dispatch($db, $action, $data) {
             'exported_at' => gmdate('Y-m-d H:i:s'),
             'projects' => $db->query("SELECT * FROM projects")->fetchAll(PDO::FETCH_ASSOC),
             'tasks' => $db->query("SELECT * FROM tasks")->fetchAll(PDO::FETCH_ASSOC),
+            'trainings' => $db->query("SELECT * FROM trainings")->fetchAll(PDO::FETCH_ASSOC),
             'history' => array_map(
                 function ($r) { $r['snapshot'] = json_decode($r['snapshot'], true); return $r; },
                 $db->query("SELECT * FROM history")->fetchAll(PDO::FETCH_ASSOC)

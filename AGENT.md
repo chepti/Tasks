@@ -44,6 +44,14 @@ https://chepti.com/tasks/api/api.php?action=help
 - due_date: YYYY-MM-DD
 
 כשמדביקים לך ערימת משימות — תייג אותן לפי שיקול דעתך ושלח ב-bulk_add או ב-ops.
+
+יש גם אזור הדרכות (trainings) — מפגשי הדרכה שהמשתמשת מעבירה:
+- action=training_upsert יוצר/מעדכן (עדכון עם "id", יצירה בלעדיו).
+- שדות עיקריים: topic, place, date, time_from, time_to, contact_name/phone/email/role,
+  pay_amount, pay_process, pay_received (0/1), people_count, audience, style, ideas, tools,
+  equipment, structure, message, slides_url, recording_url,
+  fu_recording/fu_whatsapp/fu_takeaways (0/1 — צ'קליסט המשך), notes.
+- state מחזיר upcoming_trainings. הרשימה המלאה ב-?action=all.
 ```
 
 ---

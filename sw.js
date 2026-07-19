@@ -1,5 +1,5 @@
 /* Service Worker — מעטפת מהקאש, נתונים תמיד מהרשת */
-const CACHE = 'tasks-shell-v1';
+const CACHE = 'tasks-shell-v2';
 const SHELL = [
   './',
   'index.html',

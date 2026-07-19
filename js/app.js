@@ -43,6 +43,18 @@ function ic(name, size = 20) {
     pencil: '<path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/>',
     smile: '<circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" x2="9.01" y1="9" y2="9"/><line x1="15" x2="15.01" y1="9" y2="9"/>',
     coffee: '<path d="M10 2v2"/><path d="M14 2v2"/><path d="M16 8a1 1 0 0 1 1 1v8a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4V9a1 1 0 0 1 1-1h14a4 4 0 1 1 0 8h-1"/><path d="M6 2v2"/>',
+    presentation: '<path d="M2 3h20"/><path d="M21 3v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V3"/><path d="m7 21 5-5 5 5"/>',
+    copy: '<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
+    user: '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+    banknote: '<rect width="20" height="12" x="2" y="6" rx="2"/><circle cx="12" cy="12" r="2"/><path d="M6 12h.01"/><path d="M18 12h.01"/>',
+    send: '<path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"/><path d="m21.854 2.147-10.94 10.939"/>',
+    messageCircle: '<path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/>',
+    gift: '<rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13"/><path d="M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7"/><path d="M7.5 8a2.5 2.5 0 0 1 0-5A4.8 8 0 0 1 12 8a4.8 8 0 0 1 4.5-5 2.5 2.5 0 0 1 0 5"/>',
+    cloudOff: '<path d="m2 2 20 20"/><path d="M5.782 5.782A7 7 0 0 0 9 19h8.5a4.5 4.5 0 0 0 1.307-.193"/><path d="M21.532 16.5A4.5 4.5 0 0 0 17.5 10h-1.79A7.008 7.008 0 0 0 10 5.07"/>',
+    mail: '<rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>',
+    mic: '<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/>',
+    monitor: '<rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/>',
+    refresh: '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>',
   };
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${paths[name] || ''}</svg>`;
 }
@@ -81,12 +93,14 @@ const PRAISES = [
 
 /* ---------- מצב ---------- */
 let KEY = localStorage.getItem('tasks_key') || '';
-let DATA = { projects: [], tasks: [] };
+let DATA = { projects: [], tasks: [], trainings: [] };
 let VIEW = localStorage.getItem('tasks_view') || 'now';
 let NOW_FILTER = JSON.parse(localStorage.getItem('tasks_now_filter') || '{"context":"","energy":"","size":""}');
 let OPEN_PROJECTS = new Set();
 let EDITING = null;       // המשימה שנערכת בגיליון
 let TOAST_TIMER = null;
+let OFFLINE = false;      // אין רשת — עובדים מהמטמון המקומי
+let SHOW_FINISHED_TRAININGS = false;
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -99,16 +113,91 @@ async function api(action, body = null) {
     headers: { 'X-Key': KEY, 'Content-Type': 'application/json' },
   };
   if (body) opts.body = JSON.stringify(body);
-  const res = await fetch(`${API}?action=${action}`, opts);
+  let res;
+  try {
+    res = await fetch(`${API}?action=${action}`, opts);
+  } catch (err) {
+    const e = new Error('offline');
+    e.isNetwork = true;
+    throw e;
+  }
   if (res.status === 401) { logout(); throw new Error('unauthorized'); }
   const json = await res.json();
   if (!res.ok) throw new Error(json.error || 'שגיאה');
+  OFFLINE = false;
   return json;
 }
 
+function normalizeData(d) {
+  d.projects = d.projects || [];
+  d.tasks = d.tasks || [];
+  d.trainings = d.trainings || [];
+  return d;
+}
+
 async function reload() {
-  DATA = await api('all');
+  DATA = normalizeData(await api('all'));
+  saveCache();
   render();
+}
+
+/* ---------- אופליין: מטמון + תור סנכרון ---------- */
+function saveCache() {
+  try { localStorage.setItem('tasks_cache', JSON.stringify(DATA)); } catch (e) {}
+}
+function loadCache() {
+  try { return JSON.parse(localStorage.getItem('tasks_cache') || 'null'); } catch (e) { return null; }
+}
+
+function pendingQueue() {
+  try { return JSON.parse(localStorage.getItem('tasks_pending') || '[]'); } catch (e) { return []; }
+}
+function setPendingQueue(q) {
+  localStorage.setItem('tasks_pending', JSON.stringify(q));
+  updateOfflineBadge();
+}
+function queuePush(action, body) {
+  const q = pendingQueue();
+  q.push({ action, body, ts: Date.now() });
+  setPendingQueue(q);
+}
+
+let FLUSHING = false;
+async function flushQueue() {
+  if (FLUSHING) return;
+  let q = pendingQueue();
+  if (!q.length) return;
+  FLUSHING = true;
+  try {
+    while (q.length) {
+      try {
+        await api(q[0].action, q[0].body);
+        q.shift();
+        setPendingQueue(q);
+      } catch (e) {
+        if (e.isNetwork) return;   // עדיין אין רשת — ננסה שוב אחר כך
+        q.shift();                 // בקשה פגומה — לא לחסום את התור
+        setPendingQueue(q);
+      }
+    }
+    await reload();
+    toast('סונכרן! הכל נשמר בשרת');
+  } finally {
+    FLUSHING = false;
+    updateOfflineBadge();
+  }
+}
+
+function updateOfflineBadge() {
+  const el = $('#offline-badge');
+  if (!el) return;
+  const pending = pendingQueue().length;
+  if (OFFLINE || pending) {
+    el.classList.remove('hidden');
+    el.innerHTML = `${ic('cloudOff', 13)} ${pending ? `ממתין לסנכרון (${pending})` : 'אופליין'}`;
+  } else {
+    el.classList.add('hidden');
+  }
 }
 
 /* ---------- זמנים ---------- */
@@ -181,7 +270,8 @@ function showLogin() {
 async function tryLogin(pw) {
   KEY = pw;
   try {
-    DATA = await api('all');
+    DATA = normalizeData(await api('all'));
+    saveCache();
     localStorage.setItem('tasks_key', KEY);
     $('#login-screen').classList.add('hidden');
     $('#app').classList.remove('hidden');
@@ -195,10 +285,11 @@ async function tryLogin(pw) {
 
 /* ---------- ניווט ---------- */
 const VIEWS = [
-  { id: 'now',      label: 'עכשיו',    icon: 'sparkles' },
-  { id: 'projects', label: 'פרויקטים', icon: 'folder' },
-  { id: 'all',      label: 'הכל',      icon: 'listTodo' },
-  { id: 'wins',     label: 'נצחונות',  icon: 'trophy' },
+  { id: 'now',       label: 'עכשיו',    icon: 'sparkles' },
+  { id: 'projects',  label: 'פרויקטים', icon: 'folder' },
+  { id: 'all',       label: 'הכל',      icon: 'listTodo' },
+  { id: 'trainings', label: 'הדרכות',   icon: 'presentation' },
+  { id: 'wins',      label: 'נצחונות',  icon: 'trophy' },
 ];
 
 function renderNav() {
@@ -233,8 +324,10 @@ function render() {
   if (VIEW === 'now') main.innerHTML = renderNow();
   else if (VIEW === 'projects') main.innerHTML = renderProjects();
   else if (VIEW === 'all') main.innerHTML = renderAll();
+  else if (VIEW === 'trainings') main.innerHTML = renderTrainings();
   else if (VIEW === 'wins') main.innerHTML = renderWins();
   bindMain();
+  updateOfflineBadge();
 }
 
 /* ---------- כרטיס משימה ---------- */
@@ -310,7 +403,16 @@ function renderNow() {
 
   const filtersOn = f.context || f.energy || f.size;
 
+  const nt = nextUpcomingTraining();
+  const trainingStrip = nt ? `
+    <button class="training-strip" id="goto-trainings">
+      ${ic('presentation', 18)}
+      <span class="strip-main">${esc(nt.topic || nt.place || 'הדרכה')}</span>
+      <span class="strip-when">${trainingDateLabel(nt)} · ${untilLabel(nt.date)}</span>
+    </button>` : '';
+
   return `
+  ${trainingStrip}
   <div class="now-hero">
     <h2>${ic('sparkles', 20)} מה מתאים לי עכשיו?</h2>
     <div class="filter-row">
@@ -412,6 +514,313 @@ function renderAll() {
       <div class="task-list">${list.map(t => taskCard(t)).join('')}</div>`;
   }).join('')}
   ${open.length === 0 ? `<div class="empty-state">${ic('smile', 44)}<p>הכל נקי!</p><p class="sub">הוסיפי משימה או פשוט תיהני מהרגע</p></div>` : ''}`;
+}
+
+/* ---------- הדרכות ---------- */
+function trainingsList() { return DATA.trainings || []; }
+function isTempTraining(t) { return String(t.id).startsWith('tmp'); }
+function trainingRef(t) {
+  const ref = {};
+  if (!isTempTraining(t)) ref.id = t.id;
+  if (t.client_id) ref.client_id = t.client_id;
+  return ref;
+}
+
+function daysUntil(dateStr) {
+  return Math.round((new Date(dateStr + 'T12:00:00') - new Date(todayStr() + 'T12:00:00')) / 86400000);
+}
+function untilLabel(dateStr) {
+  const d = daysUntil(dateStr);
+  if (d === 0) return 'היום!';
+  if (d === 1) return 'מחר';
+  if (d === 2) return 'מחרתיים';
+  return `בעוד ${d} ימים`;
+}
+function trainingDateLabel(t) {
+  if (!t.date) return 'בלי תאריך עדיין';
+  const d = new Date(t.date + 'T12:00:00');
+  let s = `יום ${DAY_NAMES[d.getDay()]} · ${d.getDate()}.${d.getMonth() + 1}`;
+  if (t.time_from) s += ` · ${t.time_from}${t.time_to ? '–' + t.time_to : ''}`;
+  return s;
+}
+
+function nextUpcomingTraining() {
+  const today = todayStr();
+  return trainingsList()
+    .filter(t => t.date && t.date >= today)
+    .sort((a, b) => a.date.localeCompare(b.date))[0] || null;
+}
+
+const FU_ITEMS = [
+  ['fu_recording', 'לשלוח הקלטה', 'send'],
+  ['fu_whatsapp',  'קבוצת וצאפ מלווה', 'messageCircle'],
+  ['fu_takeaways', 'עם מה יוצאים מהמפגש', 'gift'],
+];
+
+function trainingCard(t, { finished = false } = {}) {
+  const contact = [t.contact_name, t.contact_role].filter(Boolean).join(' · ');
+  return `
+  <div class="card training-card" data-tedit="${t.id}">
+    <div class="training-head">
+      <div style="flex:1;min-width:0">
+        <div class="training-topic">${esc(t.topic || t.place || 'הדרכה חדשה')}</div>
+        <div class="training-meta">
+          ${t.place ? `<span class="tag t-sky">${ic('mapPin', 11)}${esc(t.place)}</span>` : ''}
+          <span class="tag ${t.date ? 't-lilac' : 't-gray'}">${ic('calendar', 11)}${trainingDateLabel(t)}</span>
+          ${!finished && t.date ? `<span class="tag t-coral">${ic('clock', 11)}${untilLabel(t.date)}</span>` : ''}
+          ${isTempTraining(t) ? `<span class="tag t-peach">${ic('cloudOff', 11)}ממתין לסנכרון</span>` : ''}
+        </div>
+        ${contact ? `<div class="training-contact">${ic('user', 13)} ${esc(contact)}</div>` : ''}
+      </div>
+    </div>
+    ${finished ? `
+      <div class="training-actions">
+        <button class="pill-toggle ${t.pay_received == 1 ? 'on' : ''}" data-pay="${t.id}">
+          ${ic(t.pay_received == 1 ? 'check' : 'banknote', 14)}
+          ${t.pay_received == 1 ? 'התשלום התקבל' : 'ממתין לתשלום'}${t.pay_amount ? ` · ${esc(t.pay_amount)}` : ''}
+        </button>
+        ${FU_ITEMS.map(([k, label, icon]) => `
+          <button class="pill-toggle small ${t[k] == 1 ? 'on' : ''}" data-fu="${k}" data-tid="${t.id}" title="${label}">
+            ${ic(icon, 13)}<span class="fu-label">${label}</span>
+          </button>`).join('')}
+      </div>` : ''}
+  </div>`;
+}
+
+function renderTrainings() {
+  const today = todayStr();
+  const all = trainingsList();
+  const upcoming = all.filter(t => !t.date || t.date >= today)
+    .sort((a, b) => (a.date || '9999').localeCompare(b.date || '9999'));
+  const finished = all.filter(t => t.date && t.date < today)
+    .sort((a, b) => b.date.localeCompare(a.date));
+  const next = upcoming.length && upcoming[0].date ? upcoming[0] : null;
+  const rest = next ? upcoming.slice(1) : upcoming;
+
+  const heroHtml = next ? `
+  <div class="training-hero" data-tedit="${next.id}">
+    <div class="training-hero-top">
+      <span class="tag t-coral" style="font-size:.8rem">${ic('clock', 12)}${untilLabel(next.date)}</span>
+      ${isTempTraining(next) ? `<span class="tag t-peach">${ic('cloudOff', 11)}ממתין לסנכרון</span>` : ''}
+    </div>
+    <h2>${esc(next.topic || 'הדרכה')}</h2>
+    <div class="training-hero-meta">
+      ${next.place ? `<span>${ic('mapPin', 15)} ${esc(next.place)}</span>` : ''}
+      <span>${ic('calendar', 15)} ${trainingDateLabel(next)}</span>
+      ${next.people_count ? `<span>${ic('user', 15)} ${esc(next.people_count)} משתתפים</span>` : ''}
+    </div>
+    ${next.message ? `<div class="training-hero-msg">${ic('sparkles', 14)} ${esc(next.message)}</div>` : ''}
+    <div class="training-hero-actions">
+      ${next.contact_phone ? `<a class="btn btn-ghost hero-btn" href="tel:${esc(next.contact_phone)}" onclick="event.stopPropagation()">${ic('phone', 15)} ${esc(next.contact_name || 'להתקשר')}</a>` : ''}
+      ${next.contact_email ? `<a class="btn btn-ghost hero-btn" href="mailto:${esc(next.contact_email)}" onclick="event.stopPropagation()">${ic('mail', 15)} מייל</a>` : ''}
+      ${next.slides_url ? `<button class="btn btn-ghost hero-btn" data-copy="${esc(next.slides_url)}">${ic('monitor', 15)} העתקת מצגת</button>` : ''}
+      ${next.recording_url ? `<button class="btn btn-ghost hero-btn" data-copy="${esc(next.recording_url)}">${ic('mic', 15)} העתקת הקלטה</button>` : ''}
+    </div>
+  </div>` : '';
+
+  return `
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+    <div class="section-title" style="margin:0">${ic('presentation', 20)} הדרכות <span class="count">${upcoming.length}</span></div>
+    <button class="btn btn-ghost" id="btn-new-training">${ic('plus', 16)} הדרכה</button>
+  </div>
+  ${heroHtml}
+  ${rest.length ? `
+    <div class="section-title">בהמשך <span class="count">${rest.length}</span></div>
+    <div class="task-list">${rest.map(t => trainingCard(t)).join('')}</div>` : ''}
+  ${!all.length ? `
+    <div class="empty-state">${ic('presentation', 44)}<p>עוד אין הדרכות</p><p class="sub">כל מה שתקלידי נשמר גם בלי רשת</p></div>` : ''}
+  ${finished.length ? `
+    <button class="section-title finished-toggle" id="toggle-finished" style="background:none;border:none;cursor:pointer">
+      ${ic('chevronDown', 16)} הסתיימו <span class="count">${finished.length}</span>
+      ${finished.some(t => t.pay_received != 1 && t.pay_amount) ? `<span class="tag t-peach">${ic('banknote', 11)}יש תשלומים פתוחים</span>` : ''}
+    </button>
+    ${SHOW_FINISHED_TRAININGS ? `<div class="task-list">${finished.map(t => trainingCard(t, { finished: true })).join('')}</div>` : ''}
+  ` : ''}`;
+}
+
+async function saveTraining(payload, { quiet = false } = {}) {
+  const findLocal = () => DATA.trainings.findIndex(x =>
+    (payload.id && x.id == payload.id) ||
+    (payload.client_id && x.client_id === payload.client_id));
+  try {
+    const { training } = await api('training_upsert', payload);
+    const i = findLocal();
+    if (i >= 0) DATA.trainings[i] = training; else DATA.trainings.push(training);
+    if (!quiet) toast('נשמר!');
+  } catch (e) {
+    if (e.isNetwork) {
+      OFFLINE = true;
+      queuePush('training_upsert', payload);
+      const i = findLocal();
+      if (i >= 0) Object.assign(DATA.trainings[i], payload);
+      else DATA.trainings.push({ pay_received: 0, fu_recording: 0, fu_whatsapp: 0, fu_takeaways: 0, ...payload, id: 'tmp-' + payload.client_id });
+      toast('נשמר במכשיר — יסונכרן כשתחזור הרשת');
+    } else {
+      toast('אופס — ' + e.message);
+      return;
+    }
+  }
+  saveCache();
+  render();
+}
+
+function copyText(text) {
+  const done = () => toast('הועתק!');
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done).catch(() => fallbackCopy(text, done));
+  } else fallbackCopy(text, done);
+}
+function fallbackCopy(text, done) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed'; ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand('copy'); done(); } catch (e) {}
+  ta.remove();
+}
+
+/* ---------- גיליון עריכת הדרכה ---------- */
+function openTrainingSheet(id) {
+  const t = id != null
+    ? { ...trainingsList().find(x => x.id == id) }
+    : { client_id: 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7) };
+  const v = f => esc(t[f] || '');
+
+  const txt = (f, label, icon, ph = '', type = 'text') => `
+    <div class="field">
+      <div class="field-label">${ic(icon, 13)} ${label}</div>
+      <input type="${type}" id="ts-${f}" value="${v(f)}" placeholder="${esc(ph)}">
+    </div>`;
+  const area = (f, label, icon, ph = '', rows = 2) => `
+    <div class="field">
+      <div class="field-label">${ic(icon, 13)} ${label}</div>
+      <textarea id="ts-${f}" rows="${rows}" placeholder="${esc(ph)}">${v(f)}</textarea>
+    </div>`;
+  const urlRow = (f, label, icon) => `
+    <div class="field">
+      <div class="field-label">${ic(icon, 13)} ${label}</div>
+      <div class="url-row">
+        <input type="url" id="ts-${f}" value="${v(f)}" placeholder="https://..." dir="ltr">
+        <button class="icon-btn" data-copyfield="ts-${f}" title="העתקה">${ic('copy', 16)}</button>
+      </div>
+    </div>`;
+
+  $('#task-sheet').innerHTML = `
+    <div class="sheet-handle"></div>
+    <h3>${id != null ? 'עריכת הדרכה' : 'הדרכה חדשה'}</h3>
+
+    <div class="sheet-section">${ic('presentation', 15)} המפגש</div>
+    ${txt('topic', 'נושא', 'sparkles', 'על מה ההדרכה?')}
+    <div class="row-2">
+      ${txt('place', 'שם המקום', 'mapPin')}
+      ${txt('date', 'תאריך', 'calendar', '', 'date')}
+    </div>
+    <div class="row-2">
+      ${txt('time_from', 'משעה', 'clock', '', 'time')}
+      ${txt('time_to', 'עד שעה', 'clock', '', 'time')}
+    </div>
+    <div id="ts-daylabel" class="day-hint"></div>
+
+    <div class="sheet-section">${ic('user', 15)} איש קשר</div>
+    <div class="row-2">
+      ${txt('contact_name', 'שם', 'user')}
+      ${txt('contact_role', 'תפקיד', 'star')}
+    </div>
+    <div class="row-2">
+      ${txt('contact_phone', 'טלפון', 'phone', '', 'tel')}
+      ${txt('contact_email', 'מייל', 'mail', '', 'email')}
+    </div>
+
+    <div class="sheet-section">${ic('banknote', 15)} תשלום</div>
+    <div class="row-2">
+      ${txt('pay_amount', 'סכום', 'banknote')}
+      ${txt('pay_process', 'תהליך', 'listTodo', 'חשבונית? הצעת מחיר? דרך מי?')}
+    </div>
+    <label class="check-row"><input type="checkbox" id="ts-pay_received" ${t.pay_received == 1 ? 'checked' : ''}> התשלום התקבל</label>
+
+    <div class="sheet-section">${ic('smile', 15)} הקהל</div>
+    <div class="row-2">
+      ${txt('people_count', 'כמה אנשים', 'user')}
+      ${txt('style', 'סגנון', 'zap', 'סדנאי / השראה / הרצאה...')}
+    </div>
+    ${area('audience', 'מאפייני הקהל וידע קודם', 'smile', 'מי הם? מה הם כבר יודעים? מה כבר עברו?')}
+
+    <div class="sheet-section">${ic('sparkles', 15)} תוכן</div>
+    ${area('ideas', 'רעיונות', 'sparkles', 'רעיונות למפגש...')}
+    ${area('tools', 'כלים שיילמדו', 'zap', 'אילו כלים להראות?')}
+    ${area('message', 'מסר מרכזי מבוקש', 'heart', 'עם איזו תחושה/תובנה יוצאים?')}
+    ${area('structure', 'מבנה מבוקש', 'listTodo', 'פתיחה, התנסות, סיכום...')}
+    ${area('equipment', 'ציוד נדרש למורים', 'laptop', 'מחשבים? ניידים? חיבור לאינטרנט?')}
+
+    <div class="sheet-section">${ic('monitor', 15)} קישורים</div>
+    ${urlRow('slides_url', 'מצגת', 'monitor')}
+    ${urlRow('recording_url', 'הקלטה', 'mic')}
+
+    <div class="sheet-section">${ic('check', 15)} פעולות משלימות</div>
+    ${FU_ITEMS.map(([k, label, icon]) => `
+      <label class="check-row"><input type="checkbox" id="ts-${k}" ${t[k] == 1 ? 'checked' : ''}> ${ic(icon, 15)} ${label}</label>`).join('')}
+
+    ${area('notes', 'הערות', 'pencil', '', 2)}
+
+    <div class="sheet-actions">
+      ${id != null ? `<button class="btn btn-danger" id="ts-delete" title="מחיקה">${ic('trash', 17)}</button>` : ''}
+      <button class="btn btn-ghost" id="ts-cancel">ביטול</button>
+      <button class="btn btn-primary" id="ts-save">שמירה</button>
+    </div>`;
+
+  $('#task-sheet').classList.remove('hidden');
+  $('#sheet-backdrop').classList.remove('hidden');
+
+  const dayHint = () => {
+    const dv = $('#ts-date').value;
+    $('#ts-daylabel').textContent = dv ? 'יום ' + DAY_NAMES[new Date(dv + 'T12:00:00').getDay()] : '';
+  };
+  dayHint();
+  $('#ts-date').oninput = dayHint;
+
+  $$('#task-sheet [data-copyfield]').forEach(b => b.onclick = e => {
+    e.preventDefault();
+    const val = $('#' + b.dataset.copyfield).value.trim();
+    if (val) copyText(val);
+  });
+
+  $('#ts-cancel').onclick = closeSheet;
+  $('#sheet-backdrop').onclick = closeSheet;
+  $('#ts-save').onclick = async () => {
+    const payload = { ...trainingRef(t), client_id: t.client_id || ('c' + Date.now().toString(36)) };
+    ['topic','place','date','time_from','time_to','contact_name','contact_role','contact_phone','contact_email',
+     'pay_amount','pay_process','people_count','style','audience','ideas','tools','message','structure','equipment',
+     'slides_url','recording_url','notes'].forEach(f => payload[f] = $('#ts-' + f).value.trim());
+    payload.pay_received = $('#ts-pay_received').checked ? 1 : 0;
+    FU_ITEMS.forEach(([k]) => payload[k] = $('#ts-' + k).checked ? 1 : 0);
+    closeSheet();
+    await saveTraining(payload);
+  };
+
+  const del = $('#ts-delete');
+  if (del) del.onclick = async () => {
+    closeSheet();
+    if (isTempTraining(t)) {
+      DATA.trainings = DATA.trainings.filter(x => x.id != t.id);
+      setPendingQueue(pendingQueue().filter(op => op.body?.client_id !== t.client_id));
+      saveCache(); render();
+      toast('נמחקה');
+      return;
+    }
+    try {
+      await api('training_delete', { id: t.id });
+      DATA.trainings = DATA.trainings.filter(x => x.id != t.id);
+      toast('נמחקה (אפשר לשחזר מההיסטוריה)');
+    } catch (e) {
+      if (e.isNetwork) {
+        queuePush('training_delete', { id: t.id });
+        DATA.trainings = DATA.trainings.filter(x => x.id != t.id);
+        toast('תימחק כשתחזור הרשת');
+      } else toast('אופס — ' + e.message);
+    }
+    saveCache(); render();
+  };
 }
 
 /* ---------- תצוגת נצחונות ---------- */
@@ -528,6 +937,32 @@ function bindMain() {
     await reload();
     toast('חזרה לרשימה');
   });
+  // הדרכות
+  $$('[data-tedit]').forEach(el => el.onclick = e => {
+    if (e.target.closest('[data-copy],[data-pay],[data-fu],a')) return;
+    openTrainingSheet(el.dataset.tedit);
+  });
+  $$('[data-copy]').forEach(b => b.onclick = e => {
+    e.stopPropagation();
+    copyText(b.dataset.copy);
+  });
+  $$('[data-pay]').forEach(b => b.onclick = e => {
+    e.stopPropagation();
+    const t = trainingsList().find(x => x.id == b.dataset.pay);
+    saveTraining({ ...trainingRef(t), pay_received: t.pay_received == 1 ? 0 : 1 }, { quiet: true });
+    if (t.pay_received != 1) confetti(50, b);
+  });
+  $$('[data-fu]').forEach(b => b.onclick = e => {
+    e.stopPropagation();
+    const t = trainingsList().find(x => x.id == b.dataset.tid);
+    saveTraining({ ...trainingRef(t), [b.dataset.fu]: t[b.dataset.fu] == 1 ? 0 : 1 }, { quiet: true });
+  });
+  const nt = $('#btn-new-training');
+  if (nt) nt.onclick = () => openTrainingSheet(null);
+  const tf = $('#toggle-finished');
+  if (tf) tf.onclick = () => { SHOW_FINISHED_TRAININGS = !SHOW_FINISHED_TRAININGS; render(); };
+  const gt = $('#goto-trainings');
+  if (gt) gt.onclick = () => { VIEW = 'trainings'; localStorage.setItem('tasks_view', VIEW); render(); };
 }
 
 async function addProjectTask(pid) {
@@ -831,8 +1266,8 @@ async function openHistoryModal() {
     ${history.map(h => `
       <div class="history-item">
         <div class="h-what">
-          <div class="h-title">${esc(h.snapshot?.title || h.snapshot?.name || '#' + h.entity_id)}</div>
-          <div class="h-meta">${h.entity === 'project' ? 'פרויקט' : 'משימה'} · ${ACTIONS[h.action] || h.action} · ${timeAgo(h.at)}</div>
+          <div class="h-title">${esc(h.snapshot?.title || h.snapshot?.name || h.snapshot?.topic || h.snapshot?.place || '#' + h.entity_id)}</div>
+          <div class="h-meta">${h.entity === 'project' ? 'פרויקט' : h.entity === 'training' ? 'הדרכה' : 'משימה'} · ${ACTIONS[h.action] || h.action} · ${timeAgo(h.at)}</div>
         </div>
         ${['update', 'delete', 'complete'].includes(h.action) ? `<button class="btn btn-ghost" data-restore="${h.id}">שחזור</button>` : ''}
       </div>`).join('') || '<p style="color:var(--ink-soft)">אין עדיין היסטוריה</p>'}
@@ -977,16 +1412,41 @@ document.addEventListener('keydown', e => {
 (async function init() {
   if (KEY) {
     try {
-      DATA = await api('all');
+      await flushQueue();                    // קודם לרוקן שינויים שחיכו במכשיר
+      DATA = normalizeData(await api('all'));
+      saveCache();
       $('#app').classList.remove('hidden');
       render();
       return;
-    } catch (e) { /* מפתח לא תקף — מסך כניסה */ }
+    } catch (e) {
+      if (e.isNetwork) {
+        // אין רשת — עובדים מהמטמון המקומי
+        const cached = loadCache();
+        if (cached) {
+          OFFLINE = true;
+          DATA = normalizeData(cached);
+          $('#app').classList.remove('hidden');
+          render();
+          return;
+        }
+      }
+      /* מפתח לא תקף — מסך כניסה */
+    }
   }
   showLogin();
 })();
 
+// כשחוזרת הרשת — לסנכרן את מה שחיכה
+window.addEventListener('online', () => {
+  if (KEY) flushQueue().catch(() => {});
+});
+
 // רענון כשחוזרים לאפליקציה
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden && KEY && !$('#app').classList.contains('hidden')) reload().catch(() => {});
+  if (!document.hidden && KEY && !$('#app').classList.contains('hidden')) {
+    flushQueue().catch(() => {}).then(() => reload().catch(() => {
+      OFFLINE = true;
+      updateOfflineBadge();
+    }));
+  }
 });

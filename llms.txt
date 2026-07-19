@@ -19,6 +19,12 @@
 - `POST ?action=bulk_add` — הדבקת ערימה. גוף: `{"tasks":[{"title":"א","project":"בית"}, "שורה חופשית"]}`
 - `POST ?action=ops` — הרבה פעולות בבקשה אחת. גוף: `{"ops":[{"action":"task_create","title":"..."},{"action":"task_complete","match":"..."}]}`
 
+## הדרכות (trainings)
+- `POST ?action=training_upsert` — יצירה/עדכון של הדרכה. עדכון לפי `{"id":N}`, אחרת נוצרת חדשה.
+  שדות: `topic, place, date (YYYY-MM-DD), time_from, time_to, contact_name/phone/email/role, pay_amount, pay_process, pay_received, people_count, audience, style, ideas, tools, equipment, structure, message, slides_url, recording_url, fu_recording, fu_whatsapp, fu_takeaways, notes`
+- `POST ?action=training_delete` — `{"id":N}`
+- `?action=state` מחזיר גם `upcoming_trainings` (חמש הקרובות).
+
 ## כללי זהב
 - אפשר לפנות למשימה לפי `match` (חלק מהכותרת) במקום `id` — אין צורך למשוך רשימה ולנחש מזהים.
 - אפשר לתת `project` בשם; הוא יימצא או ייווצר אוטומטית.
