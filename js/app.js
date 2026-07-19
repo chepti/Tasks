@@ -734,14 +734,14 @@ function openTrainingSheet(id) {
     : { client_id: 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7) };
   const v = f => esc(t[f] || '');
 
-  // תא קומפקטי: תווית זעירה למעלה, שדה מתחת. span קובע כמה עמודות תופס בשורה.
-  const cell = (f, label, icon, ph = '', type = 'text', span = 1) => `
-    <label class="cell" style="grid-column:span ${span}">
+  // תא קומפקטי: תווית זעירה למעלה, שדה מתחת.
+  const cell = (f, label, icon, ph = '', type = 'text', cls = '') => `
+    <label class="cell ${cls}">
       <span class="cell-label">${ic(icon, 12)} ${label}</span>
       <input type="${type}" id="ts-${f}" value="${v(f)}" placeholder="${esc(ph)}">
     </label>`;
-  const area = (f, label, icon, ph = '', rows = 2) => `
-    <label class="cell full">
+  const area = (f, label, icon, ph = '', rows = 2, cls = '') => `
+    <label class="cell full ${cls}">
       <span class="cell-label">${ic(icon, 12)} ${label}</span>
       <textarea id="ts-${f}" rows="${rows}" placeholder="${esc(ph)}">${v(f)}</textarea>
     </label>`;
@@ -763,73 +763,85 @@ function openTrainingSheet(id) {
       ${id != null ? `<button class="corner-btn danger" id="ts-delete" title="מחיקה">${ic('trash', 17)}</button>` : '<span style="width:38px"></span>'}
     </div>
 
-    ${divider('presentation', 'המפגש')}
-    <div class="tgrid">
-      ${cell('topic', 'נושא', 'sparkles', 'על מה ההדרכה?', 'text', 3)}
-      <div class="cell full seg-cell">
-        <span class="cell-label">${ic('monitor', 12)} מקוון / פיזי</span>
-        <div class="seg">${Object.entries(TMODE).map(([k, v]) => `
-          <button type="button" class="seg-btn ${t.mode === k ? 'on' : ''}" data-tmode="${k}">${ic(v.icon, 13)}${v.label}</button>`).join('')}
+    <div class="t-form">
+
+      <!-- פס עליון: הנושא + פרטי המפגש -->
+      <div class="t-top">
+        ${area('topic', 'נושא', 'sparkles', 'על מה ההדרכה?', 1, 't-topic')}
+        <div class="t-essentials">
+          <div class="cell seg-cell">
+            <span class="cell-label">${ic('monitor', 12)} מקוון / פיזי</span>
+            <div class="seg">${Object.entries(TMODE).map(([k, v]) => `
+              <button type="button" class="seg-btn c-${v.color} ${t.mode === k ? 'on' : ''}" data-tmode="${k}">${ic(v.icon, 13)}${v.label}</button>`).join('')}
+            </div>
+          </div>
+          ${cell('date', 'תאריך', 'calendar', '', 'date', 'cell-date')}
+          ${cell('time_from', 'משעה', 'clock', '', 'time')}
+          ${cell('time_to', 'עד שעה', 'clock', '', 'time')}
+          ${cell('place', 'מקום / פלטפורמה', 'mapPin', '', 'text', 'cell-place')}
+        </div>
+        <div id="ts-daylabel" class="day-hint"></div>
+        <a id="ts-gcal" class="btn btn-ghost gcal-btn hidden" target="_blank" rel="noopener">${ic('calendar', 15)} הוספה ליומן גוגל</a>
+      </div>
+
+      <!-- מרכז: תוכן | צד: מאפיינים -->
+      <div class="t-cols">
+        <div class="t-main">
+          ${divider('sparkles', 'התוכן')}
+          ${area('audience', 'מאפייני הקהל וידע קודם', 'smile', 'מי הם? מה כבר יודעים? מה כבר עברו?')}
+          ${area('ideas', 'רעיונות למפגש', 'sparkles', 'רעיונות, זוויות, פעילויות...')}
+          ${area('tools', 'כלים שיילמדו', 'zap', 'אילו כלים להראות?')}
+          ${area('message', 'מסר מרכזי מבוקש', 'heart', 'עם איזו תחושה/תובנה יוצאים?')}
+          ${area('structure', 'מבנה מבוקש', 'listTodo', 'פתיחה, התנסות, סיכום...')}
+          ${area('equipment', 'ציוד נדרש למורים', 'laptop', 'מחשבים? ניידים? אינטרנט?')}
+        </div>
+
+        <div class="t-side">
+          ${divider('smile', 'הקהל')}
+          <div class="tgrid c2">
+            ${cell('people_count', 'כמה אנשים', 'user')}
+            ${cell('style', 'סגנון', 'zap', 'סדנאי / השראה...')}
+          </div>
+
+          ${divider('user', 'איש קשר')}
+          <div class="tgrid c2">
+            ${cell('contact_name', 'שם', 'user')}
+            ${cell('contact_role', 'תפקיד', 'star')}
+            ${cell('contact_phone', 'טלפון', 'phone', '', 'tel')}
+            ${cell('contact_email', 'מייל', 'mail', '', 'email')}
+          </div>
+
+          ${divider('banknote', 'תשלום')}
+          <div class="tgrid c2">
+            ${cell('pay_amount', 'סכום', 'banknote')}
+            ${cell('pay_process', 'תהליך', 'listTodo', 'חשבונית / הצעת מחיר')}
+          </div>
+          <div class="pill-row">
+            <button type="button" class="pill-toggle ${t.pay_received == 1 ? 'on' : ''}" data-ttoggle="pay_received">${ic('banknote', 13)} התשלום התקבל</button>
+          </div>
+
+          ${divider('monitor', 'קישורים')}
+          ${urlCell('slides_url', 'מצגת', 'monitor')}
+          ${urlCell('recording_url', 'הקלטה', 'mic')}
+
+          ${divider('check', 'פעולות משלימות')}
+          <div class="pill-row">
+            ${FU_ITEMS.map(([k, label, icon]) => `
+              <button type="button" class="pill-toggle ${t[k] == 1 ? 'on' : ''}" data-ttoggle="${k}">${ic(icon, 13)} ${label}</button>`).join('')}
+          </div>
         </div>
       </div>
-      ${cell('place', 'מקום / פלטפורמה', 'mapPin', '', 'text', 3)}
-      ${cell('date', 'תאריך', 'calendar', '', 'date')}
-      ${cell('time_from', 'משעה', 'clock', '', 'time')}
-      ${cell('time_to', 'עד שעה', 'clock', '', 'time')}
-    </div>
-    <div id="ts-daylabel" class="day-hint"></div>
-    <a id="ts-gcal" class="btn btn-ghost gcal-btn hidden" target="_blank" rel="noopener">${ic('calendar', 15)} הוספה ליומן גוגל</a>
 
-    ${divider('user', 'איש קשר')}
-    <div class="tgrid c2">
-      ${cell('contact_name', 'שם', 'user')}
-      ${cell('contact_role', 'תפקיד', 'star')}
-      ${cell('contact_phone', 'טלפון', 'phone', '', 'tel')}
-      ${cell('contact_email', 'מייל', 'mail', '', 'email')}
+      <!-- פס תחתון: הערות -->
+      <div class="t-bottom">
+        ${area('notes', 'הערות', 'pencil', '', 2)}
+      </div>
     </div>
-
-    ${divider('banknote', 'תשלום')}
-    <div class="tgrid c2">
-      ${cell('pay_amount', 'סכום', 'banknote')}
-      ${cell('pay_process', 'תהליך', 'listTodo', 'חשבונית / הצעת מחיר / דרך מי')}
-    </div>
-    <div class="pill-row">
-      <button type="button" class="pill-toggle ${t.pay_received == 1 ? 'on' : ''}" data-ttoggle="pay_received">${ic('banknote', 13)} התשלום התקבל</button>
-    </div>
-
-    ${divider('smile', 'הקהל')}
-    <div class="tgrid c2">
-      ${cell('people_count', 'כמה אנשים', 'user')}
-      ${cell('style', 'סגנון', 'zap', 'סדנאי / השראה...')}
-    </div>
-    <div class="tgrid">${area('audience', 'מאפייני הקהל וידע קודם', 'smile', 'מי הם? מה כבר יודעים? מה כבר עברו?')}</div>
-
-    ${divider('sparkles', 'תוכן')}
-    <div class="tgrid">
-      ${area('ideas', 'רעיונות', 'sparkles', 'רעיונות למפגש...')}
-      ${area('tools', 'כלים שיילמדו', 'zap', 'אילו כלים להראות?')}
-      ${area('message', 'מסר מרכזי', 'heart', 'עם איזו תחושה/תובנה יוצאים?')}
-      ${area('structure', 'מבנה מבוקש', 'listTodo', 'פתיחה, התנסות, סיכום...')}
-      ${area('equipment', 'ציוד למורים', 'laptop', 'מחשבים? ניידים? אינטרנט?')}
-    </div>
-
-    ${divider('monitor', 'קישורים')}
-    <div class="tgrid">
-      ${urlCell('slides_url', 'מצגת', 'monitor')}
-      ${urlCell('recording_url', 'הקלטה', 'mic')}
-    </div>
-
-    ${divider('check', 'פעולות משלימות')}
-    <div class="pill-row">
-      ${FU_ITEMS.map(([k, label, icon]) => `
-        <button type="button" class="pill-toggle ${t[k] == 1 ? 'on' : ''}" data-ttoggle="${k}">${ic(icon, 13)} ${label}</button>`).join('')}
-    </div>
-
-    <div class="tgrid" style="margin-top:12px">${area('notes', 'הערות', 'pencil', '', 2)}</div>
 
     <div class="sheet-actions">
       <button class="btn btn-primary" id="ts-save" style="flex:1">${id != null ? 'שמירה' : 'הוספה'}</button>
     </div>`;
+  $('#task-sheet').classList.add('wide');
 
   $('#task-sheet').classList.remove('hidden');
   $('#sheet-backdrop').classList.remove('hidden');
@@ -850,8 +862,12 @@ function openTrainingSheet(id) {
   };
   dayHint();
   ['ts-date', 'ts-time_from', 'ts-time_to', 'ts-topic', 'ts-place'].forEach(id => {
-    const el = $('#' + id); if (el) el.oninput = dayHint;
+    const el = $('#' + id); if (el) el.addEventListener('input', dayHint);
   });
+
+  // טקסטאריות שגדלות לבד לפי התוכן — שהכל יוצג בלי גלילה פנימית
+  const grow = el => { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight + 2, 640) + 'px'; };
+  $$('#task-sheet textarea').forEach(el => { grow(el); el.addEventListener('input', () => grow(el)); });
 
   $$('#task-sheet [data-copyfield]').forEach(b => b.onclick = e => {
     e.preventDefault();
@@ -1252,6 +1268,7 @@ function openTaskSheet(id) {
 
 function closeSheet() {
   $('#task-sheet').classList.add('hidden');
+  $('#task-sheet').classList.remove('wide');
   $('#sheet-backdrop').classList.add('hidden');
   EDITING = null;
 }
