@@ -723,6 +723,67 @@ button.chip:hover { transform: translateY(-1px); }
 }
 .gcal-box input[readonly] { font-size: .8rem; background: #fff; }
 
+/* ---- טופס הדרכה קומפקטי ---- */
+.sheet-topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; margin-bottom: 6px;
+}
+.sheet-topbar h3 { margin: 0; flex: 1; text-align: center; font-size: 1.12rem; }
+.corner-btn {
+  width: 38px; height: 38px; flex-shrink: 0;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--ink-soft); background: var(--bg-soft);
+  transition: transform .12s, background .15s, color .15s;
+}
+.corner-btn:hover { transform: scale(1.06); }
+.corner-btn.danger { color: #D8402F; background: var(--coral-soft); }
+
+.sheet-divider {
+  display: flex; align-items: center; gap: 10px;
+  margin: 16px 0 9px;
+  color: var(--ink); font-weight: 600; font-size: .88rem;
+}
+.sheet-divider::before, .sheet-divider::after {
+  content: ''; height: 1.5px; flex: 1; border-radius: 2px;
+  background: var(--bg-soft);
+}
+.sheet-divider span { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.sheet-divider span svg { color: var(--coral); }
+
+.tgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px 10px; }
+.tgrid.c2 { grid-template-columns: 1fr 1fr; }
+.cell { display: flex; flex-direction: column; gap: 4px; grid-column: span 1; min-width: 0; }
+.cell.full { grid-column: 1 / -1; }
+.cell-label {
+  font-size: .72rem; font-weight: 600; color: var(--ink-soft);
+  display: flex; align-items: center; gap: 4px;
+  padding-inline-start: 3px;
+}
+.cell-label svg { color: var(--ink-faint); }
+.cell input, .cell textarea {
+  padding: 9px 12px; border-radius: 12px; font-size: .92rem;
+}
+.cell textarea { min-height: 44px; resize: vertical; }
+
+.seg {
+  display: flex; gap: 3px;
+  background: var(--bg-soft);
+  border-radius: 13px; padding: 3px;
+}
+.seg-btn {
+  flex: 1;
+  display: flex; align-items: center; justify-content: center; gap: 5px;
+  padding: 9px 6px; border-radius: 10px;
+  font-size: .85rem; font-weight: 600;
+  color: var(--ink-soft);
+  transition: all .15s;
+}
+.seg-btn.on { background: #fff; color: var(--coral); box-shadow: var(--shadow); }
+
+.pill-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.pill-row .pill-toggle { background: var(--bg-soft); }
+
 /* ============ אנימציות ============ */
 
 @keyframes pop-in {

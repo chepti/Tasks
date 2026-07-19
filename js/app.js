@@ -734,93 +734,101 @@ function openTrainingSheet(id) {
     : { client_id: 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7) };
   const v = f => esc(t[f] || '');
 
-  const txt = (f, label, icon, ph = '', type = 'text') => `
-    <div class="field">
-      <div class="field-label">${ic(icon, 13)} ${label}</div>
+  // תא קומפקטי: תווית זעירה למעלה, שדה מתחת. span קובע כמה עמודות תופס בשורה.
+  const cell = (f, label, icon, ph = '', type = 'text', span = 1) => `
+    <label class="cell" style="grid-column:span ${span}">
+      <span class="cell-label">${ic(icon, 12)} ${label}</span>
       <input type="${type}" id="ts-${f}" value="${v(f)}" placeholder="${esc(ph)}">
-    </div>`;
+    </label>`;
   const area = (f, label, icon, ph = '', rows = 2) => `
-    <div class="field">
-      <div class="field-label">${ic(icon, 13)} ${label}</div>
+    <label class="cell full">
+      <span class="cell-label">${ic(icon, 12)} ${label}</span>
       <textarea id="ts-${f}" rows="${rows}" placeholder="${esc(ph)}">${v(f)}</textarea>
-    </div>`;
-  const urlRow = (f, label, icon) => `
-    <div class="field">
-      <div class="field-label">${ic(icon, 13)} ${label}</div>
+    </label>`;
+  const urlCell = (f, label, icon) => `
+    <label class="cell full">
+      <span class="cell-label">${ic(icon, 12)} ${label}</span>
       <div class="url-row">
         <input type="url" id="ts-${f}" value="${v(f)}" placeholder="https://..." dir="ltr">
-        <button class="icon-btn" data-copyfield="ts-${f}" title="העתקה">${ic('copy', 16)}</button>
+        <button type="button" class="icon-btn" data-copyfield="ts-${f}" title="העתקה">${ic('copy', 15)}</button>
       </div>
-    </div>`;
+    </label>`;
+  const divider = (icon, label) => `<div class="sheet-divider"><span>${ic(icon, 14)} ${label}</span></div>`;
 
   $('#task-sheet').innerHTML = `
     <div class="sheet-handle"></div>
-    <h3>${id != null ? 'עריכת הדרכה' : 'הדרכה חדשה'}</h3>
+    <div class="sheet-topbar">
+      <button class="corner-btn" id="ts-cancel" title="סגירה">${ic('x', 18)}</button>
+      <h3>${id != null ? 'עריכת הדרכה' : 'הדרכה חדשה'}</h3>
+      ${id != null ? `<button class="corner-btn danger" id="ts-delete" title="מחיקה">${ic('trash', 17)}</button>` : '<span style="width:38px"></span>'}
+    </div>
 
-    <div class="sheet-section">${ic('presentation', 15)} המפגש</div>
-    ${txt('topic', 'נושא', 'sparkles', 'על מה ההדרכה?')}
-    <div class="field">
-      <div class="field-label">${ic('monitor', 13)} מקוון או פיזי</div>
-      <div class="chips">${Object.entries(TMODE).map(([k, v]) => `
-        <button type="button" class="chip c-${v.color} ${t.mode === k ? 'on' : ''}" data-tmode="${k}">${ic(v.icon, 14)}${v.label}</button>`).join('')}
+    ${divider('presentation', 'המפגש')}
+    <div class="tgrid">
+      ${cell('topic', 'נושא', 'sparkles', 'על מה ההדרכה?', 'text', 3)}
+      <div class="cell full seg-cell">
+        <span class="cell-label">${ic('monitor', 12)} מקוון / פיזי</span>
+        <div class="seg">${Object.entries(TMODE).map(([k, v]) => `
+          <button type="button" class="seg-btn ${t.mode === k ? 'on' : ''}" data-tmode="${k}">${ic(v.icon, 13)}${v.label}</button>`).join('')}
+        </div>
       </div>
-    </div>
-    <div class="row-2">
-      ${txt('place', 'שם המקום / פלטפורמה', 'mapPin')}
-      ${txt('date', 'תאריך', 'calendar', '', 'date')}
-    </div>
-    <div class="row-2">
-      ${txt('time_from', 'משעה', 'clock', '', 'time')}
-      ${txt('time_to', 'עד שעה', 'clock', '', 'time')}
+      ${cell('place', 'מקום / פלטפורמה', 'mapPin', '', 'text', 3)}
+      ${cell('date', 'תאריך', 'calendar', '', 'date')}
+      ${cell('time_from', 'משעה', 'clock', '', 'time')}
+      ${cell('time_to', 'עד שעה', 'clock', '', 'time')}
     </div>
     <div id="ts-daylabel" class="day-hint"></div>
     <a id="ts-gcal" class="btn btn-ghost gcal-btn hidden" target="_blank" rel="noopener">${ic('calendar', 15)} הוספה ליומן גוגל</a>
 
-    <div class="sheet-section">${ic('user', 15)} איש קשר</div>
-    <div class="row-2">
-      ${txt('contact_name', 'שם', 'user')}
-      ${txt('contact_role', 'תפקיד', 'star')}
-    </div>
-    <div class="row-2">
-      ${txt('contact_phone', 'טלפון', 'phone', '', 'tel')}
-      ${txt('contact_email', 'מייל', 'mail', '', 'email')}
+    ${divider('user', 'איש קשר')}
+    <div class="tgrid c2">
+      ${cell('contact_name', 'שם', 'user')}
+      ${cell('contact_role', 'תפקיד', 'star')}
+      ${cell('contact_phone', 'טלפון', 'phone', '', 'tel')}
+      ${cell('contact_email', 'מייל', 'mail', '', 'email')}
     </div>
 
-    <div class="sheet-section">${ic('banknote', 15)} תשלום</div>
-    <div class="row-2">
-      ${txt('pay_amount', 'סכום', 'banknote')}
-      ${txt('pay_process', 'תהליך', 'listTodo', 'חשבונית? הצעת מחיר? דרך מי?')}
+    ${divider('banknote', 'תשלום')}
+    <div class="tgrid c2">
+      ${cell('pay_amount', 'סכום', 'banknote')}
+      ${cell('pay_process', 'תהליך', 'listTodo', 'חשבונית / הצעת מחיר / דרך מי')}
     </div>
-    <label class="check-row"><input type="checkbox" id="ts-pay_received" ${t.pay_received == 1 ? 'checked' : ''}> התשלום התקבל</label>
-
-    <div class="sheet-section">${ic('smile', 15)} הקהל</div>
-    <div class="row-2">
-      ${txt('people_count', 'כמה אנשים', 'user')}
-      ${txt('style', 'סגנון', 'zap', 'סדנאי / השראה / הרצאה...')}
+    <div class="pill-row">
+      <button type="button" class="pill-toggle ${t.pay_received == 1 ? 'on' : ''}" data-ttoggle="pay_received">${ic('banknote', 13)} התשלום התקבל</button>
     </div>
-    ${area('audience', 'מאפייני הקהל וידע קודם', 'smile', 'מי הם? מה הם כבר יודעים? מה כבר עברו?')}
 
-    <div class="sheet-section">${ic('sparkles', 15)} תוכן</div>
-    ${area('ideas', 'רעיונות', 'sparkles', 'רעיונות למפגש...')}
-    ${area('tools', 'כלים שיילמדו', 'zap', 'אילו כלים להראות?')}
-    ${area('message', 'מסר מרכזי מבוקש', 'heart', 'עם איזו תחושה/תובנה יוצאים?')}
-    ${area('structure', 'מבנה מבוקש', 'listTodo', 'פתיחה, התנסות, סיכום...')}
-    ${area('equipment', 'ציוד נדרש למורים', 'laptop', 'מחשבים? ניידים? חיבור לאינטרנט?')}
+    ${divider('smile', 'הקהל')}
+    <div class="tgrid c2">
+      ${cell('people_count', 'כמה אנשים', 'user')}
+      ${cell('style', 'סגנון', 'zap', 'סדנאי / השראה...')}
+    </div>
+    <div class="tgrid">${area('audience', 'מאפייני הקהל וידע קודם', 'smile', 'מי הם? מה כבר יודעים? מה כבר עברו?')}</div>
 
-    <div class="sheet-section">${ic('monitor', 15)} קישורים</div>
-    ${urlRow('slides_url', 'מצגת', 'monitor')}
-    ${urlRow('recording_url', 'הקלטה', 'mic')}
+    ${divider('sparkles', 'תוכן')}
+    <div class="tgrid">
+      ${area('ideas', 'רעיונות', 'sparkles', 'רעיונות למפגש...')}
+      ${area('tools', 'כלים שיילמדו', 'zap', 'אילו כלים להראות?')}
+      ${area('message', 'מסר מרכזי', 'heart', 'עם איזו תחושה/תובנה יוצאים?')}
+      ${area('structure', 'מבנה מבוקש', 'listTodo', 'פתיחה, התנסות, סיכום...')}
+      ${area('equipment', 'ציוד למורים', 'laptop', 'מחשבים? ניידים? אינטרנט?')}
+    </div>
 
-    <div class="sheet-section">${ic('check', 15)} פעולות משלימות</div>
-    ${FU_ITEMS.map(([k, label, icon]) => `
-      <label class="check-row"><input type="checkbox" id="ts-${k}" ${t[k] == 1 ? 'checked' : ''}> ${ic(icon, 15)} ${label}</label>`).join('')}
+    ${divider('monitor', 'קישורים')}
+    <div class="tgrid">
+      ${urlCell('slides_url', 'מצגת', 'monitor')}
+      ${urlCell('recording_url', 'הקלטה', 'mic')}
+    </div>
 
-    ${area('notes', 'הערות', 'pencil', '', 2)}
+    ${divider('check', 'פעולות משלימות')}
+    <div class="pill-row">
+      ${FU_ITEMS.map(([k, label, icon]) => `
+        <button type="button" class="pill-toggle ${t[k] == 1 ? 'on' : ''}" data-ttoggle="${k}">${ic(icon, 13)} ${label}</button>`).join('')}
+    </div>
+
+    <div class="tgrid" style="margin-top:12px">${area('notes', 'הערות', 'pencil', '', 2)}</div>
 
     <div class="sheet-actions">
-      ${id != null ? `<button class="btn btn-danger" id="ts-delete" title="מחיקה">${ic('trash', 17)}</button>` : ''}
-      <button class="btn btn-ghost" id="ts-cancel">ביטול</button>
-      <button class="btn btn-primary" id="ts-save">שמירה</button>
+      <button class="btn btn-primary" id="ts-save" style="flex:1">${id != null ? 'שמירה' : 'הוספה'}</button>
     </div>`;
 
   $('#task-sheet').classList.remove('hidden');
@@ -856,6 +864,13 @@ function openTrainingSheet(id) {
     $$('#task-sheet [data-tmode]').forEach(x => x.classList.toggle('on', x.dataset.tmode === t.mode));
   });
 
+  // סימוני on/off (תשלום התקבל + פעולות משלימות) — נשמרים על t
+  $$('#task-sheet [data-ttoggle]').forEach(b => b.onclick = () => {
+    const f = b.dataset.ttoggle;
+    t[f] = t[f] == 1 ? 0 : 1;
+    b.classList.toggle('on', t[f] == 1);
+  });
+
   $('#ts-cancel').onclick = closeSheet;
   $('#sheet-backdrop').onclick = closeSheet;
   $('#ts-save').onclick = async () => {
@@ -864,8 +879,8 @@ function openTrainingSheet(id) {
      'pay_amount','pay_process','people_count','style','audience','ideas','tools','message','structure','equipment',
      'slides_url','recording_url','notes'].forEach(f => payload[f] = $('#ts-' + f).value.trim());
     payload.mode = t.mode || '';
-    payload.pay_received = $('#ts-pay_received').checked ? 1 : 0;
-    FU_ITEMS.forEach(([k]) => payload[k] = $('#ts-' + k).checked ? 1 : 0);
+    payload.pay_received = t.pay_received == 1 ? 1 : 0;
+    FU_ITEMS.forEach(([k]) => payload[k] = t[k] == 1 ? 1 : 0);
     closeSheet();
     await saveTraining(payload);
   };
