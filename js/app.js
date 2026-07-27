@@ -1239,7 +1239,8 @@ function bindIdeas() {
   });
 
   // עריכה חיה: כותרות וגופי פרומפט נשמרים ביציאה מהשדה, בלי רינדור מחדש (שלא לאבד פוקוס)
-  const grow = el => { el.style.height = 'auto'; el.style.height = (el.scrollHeight + 2) + 'px'; };
+  // ללא ריפוד נוסף — הגבול none ו-box-sizing:border-box, כך שגובה = scrollHeight מדויק
+  const grow = el => { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; };
   $$('#main .item-title, #main .item-body').forEach(el => {
     grow(el);
     el.addEventListener('input', () => grow(el));

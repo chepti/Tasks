@@ -857,7 +857,7 @@ button.chip:hover { transform: translateY(-1px); }
 .apps-grid { display: grid; grid-template-columns: 1fr; gap: 14px; }
 @media (min-width: 900px) { .apps-grid { grid-template-columns: 1fr 1fr; align-items: start; } }
 
-.app-card { padding: 16px 18px; }
+.app-card { padding: 14px 16px; }
 .app-head { display: flex; align-items: center; gap: 10px; cursor: pointer; }
 .app-card.open .project-chevron { transform: rotate(180deg); }
 .app-edit { width: 34px; height: 34px; box-shadow: none; background: transparent; }
@@ -866,13 +866,13 @@ button.chip:hover { transform: translateY(-1px); }
   margin: 10px 0 4px; padding-inline-start: 24px;
 }
 
-.item-list { margin-top: 10px; display: flex; flex-direction: column; gap: 2px; }
-.done-list { opacity: .75; margin-top: 4px; }
+.item-list { margin-top: 8px; display: flex; flex-direction: column; }
+.done-list { opacity: .75; margin-top: 2px; }
 
 .item-row {
-  display: flex; align-items: flex-start; gap: 7px;
-  padding: 5px 6px;
-  border-radius: 12px;
+  display: flex; align-items: flex-start; gap: 5px;
+  padding: 1px 4px;
+  border-radius: 10px;
   transition: background .15s;
 }
 .item-row:hover { background: var(--bg-soft); }
@@ -886,7 +886,7 @@ button.chip:hover { transform: translateY(-1px); }
    לגרירה במגע, כי (hover:none) לא נתמך אמין בכל מכשיר. */
 .item-grip {
   color: var(--ink-faint);
-  padding: 4px 2px;
+  padding: 3px 1px; margin-top: 2px;
   cursor: grab;
   touch-action: none;        /* שהגרירה במגע לא תגלול את הדף */
   flex-shrink: 0;
@@ -897,43 +897,49 @@ button.chip:hover { transform: translateY(-1px); }
 .item-grip:active { cursor: grabbing; }
 
 .item-check {
-  width: 21px; height: 21px; flex-shrink: 0;
-  margin-top: 4px;
+  width: 18px; height: 18px; flex-shrink: 0;
+  margin-top: 5px;
   border-radius: 50%;
   border: 2px solid var(--ink-faint);
   display: flex; align-items: center; justify-content: center;
   color: transparent;
   transition: all .15s;
 }
+.item-check svg { width: 11px; height: 11px; }
 .item-check:hover { border-color: var(--teal); background: var(--teal-soft); color: var(--teal); }
 .item-check.checked { border-color: var(--teal); background: var(--teal); color: #fff; }
 
 .item-main { flex: 1; min-width: 0; }
 
+/* min-height כאן חובה — כלל ה-textarea הגלובלי (70px) היה מנפח כל שורה */
 .item-title, .item-body {
   width: 100%;
+  min-height: 0;
+  display: block;            /* לא inline-block — אחרת נוסף רווח בסיס-שורה מתחת */
   border: none; background: transparent; box-shadow: none;
-  padding: 4px 2px;
+  padding: 3px 4px;
   border-radius: 8px;
   resize: none; overflow: hidden;
-  font-size: .93rem; line-height: 1.45;
+  font-size: .92rem; line-height: 1.4;
 }
 .item-title:focus, .item-body:focus { background: #fff; border-color: transparent; outline: 2px solid var(--lilac-soft); }
 .item-row.is-done .item-title { text-decoration: line-through; color: var(--ink-soft); }
 
 .heading-title {
-  font-weight: 600; font-size: .95rem;
-  color: var(--ink);
-  border-bottom: 2px solid var(--bg-soft);
-  margin-top: 6px;
+  font-weight: 600; font-size: .88rem;
+  color: var(--ink-soft);
+  letter-spacing: .02em;
+  border-bottom: 1.5px solid var(--bg-soft);
+  margin-top: 10px;
 }
+.item-row:first-child .heading-title { margin-top: 0; }
 
 .prompt-body {
   display: flex; align-items: flex-start; gap: 6px;
   background: var(--peach-soft);
-  border-radius: 12px;
-  padding: 6px 10px;
-  margin-top: 3px;
+  border-radius: 10px;
+  padding: 4px 8px;
+  margin: 1px 0 4px;
 }
 .prompt-body .item-body { font-size: .85rem; color: #7A4A12; }
 .prompt-body .item-body:focus { background: rgba(255,255,255,.75); }
@@ -941,8 +947,8 @@ button.chip:hover { transform: translateY(-1px); }
 
 .item-kind {
   flex-shrink: 0;
-  width: 26px; height: 26px;
-  margin-top: 2px;
+  width: 22px; height: 22px;
+  margin-top: 3px;
   border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
   transition: transform .12s;
@@ -952,7 +958,7 @@ button.chip:hover { transform: translateY(-1px); }
 .item-del {
   flex-shrink: 0;
   color: var(--ink-faint);
-  padding: 5px 3px; margin-top: 2px;
+  padding: 3px 2px; margin-top: 3px;
   opacity: 0;
   transition: opacity .15s, color .15s;
 }
@@ -962,19 +968,19 @@ button.chip:hover { transform: translateY(-1px); }
 @media (max-width: 800px) { .item-del { opacity: .45; } }
 
 .item-add {
-  display: flex; align-items: center; gap: 8px;
-  margin-top: 10px;
-  padding-top: 10px;
+  display: flex; align-items: center; gap: 7px;
+  margin-top: 8px;
+  padding-top: 8px;
   border-top: 1px dashed var(--bg-soft);
 }
 .item-add input {
   flex: 1; min-width: 0;
-  padding: 9px 14px; font-size: .9rem;
+  padding: 7px 13px; font-size: .88rem;
   border-radius: var(--r-pill);
 }
-.add-kinds { display: flex; gap: 3px; background: var(--bg-soft); border-radius: var(--r-pill); padding: 3px; }
+.add-kinds { display: flex; gap: 2px; background: var(--bg-soft); border-radius: var(--r-pill); padding: 2px; }
 .add-kind {
-  width: 30px; height: 30px;
+  width: 26px; height: 26px;
   border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
   color: var(--ink-soft);
