@@ -94,7 +94,10 @@ textarea { resize: vertical; min-height: 70px; }
   box-shadow: 0 6px 18px rgba(255, 123, 107, .35);
 }
 .btn-primary:hover { box-shadow: 0 8px 24px rgba(255, 123, 107, .45); }
-.btn-ghost { background: var(--bg-soft); color: var(--ink); }
+.btn-ghost { background: var(--bg-soft); color: var(--ink); border: 2px solid transparent; }
+/* בתוך גיליון/מודאל הרקע לבן, ואז bg-soft לבד לא נראה כמו כפתור — מסגרת נותנת גוף */
+.sheet .btn-ghost, .modal .btn-ghost { background: #fff; border-color: var(--ink-faint); }
+.sheet .btn-ghost:hover, .modal .btn-ghost:hover { border-color: var(--coral); color: var(--coral); background: var(--coral-soft); }
 .btn-ghost:hover { background: var(--coral-soft); }
 .btn-lg { padding: 14px 28px; font-size: 1.05rem; width: 100%; }
 .btn-danger { background: var(--coral-soft); color: #D8402F; }
@@ -213,25 +216,41 @@ textarea { resize: vertical; min-height: 70px; }
 
 .chips { display: flex; flex-wrap: wrap; gap: 8px; }
 
+/* כבוי = לבן עם מסגרת נראית וטקסט כהה; דלוק = מלא בצבע עם צל.
+   בלי המסגרת הצ'יפים הכבויים נבלעים ברקע הקרם ואי אפשר לראות מה נבחר. */
 .chip {
   display: inline-flex; align-items: center; gap: 6px;
   border-radius: var(--r-pill);
   padding: 7px 14px;
   font-size: .85rem; font-weight: 600;
   background: var(--card);
-  color: var(--ink-soft);
+  color: var(--ink);
+  border: 2px solid var(--ink-faint);
   box-shadow: var(--shadow);
   transition: all .15s;
   white-space: nowrap;
 }
-button.chip:hover { transform: translateY(-1px); }
-.chip.on { color: #fff; }
+.chip svg { color: var(--ink-soft); }
+button.chip:hover { transform: translateY(-1px); border-color: var(--ink-soft); }
+/* טקסט כהה ולא לבן: הפלטה פסטלית, ולבן עליה נותן יחס קונטרסט ~2.2 (בלתי קריא).
+   כהה על אותו פסטל מגיע ל-4:1 עד 6:1 בלי לשנות את הצבעוניות של האפליקציה. */
+.chip.on {
+  color: var(--ink);
+  border-color: transparent;
+  box-shadow: 0 4px 14px rgba(61, 58, 80, .25);
+}
+.chip.on svg { color: var(--ink); }
 .chip.on.c-coral { background: var(--coral); }
 .chip.on.c-teal  { background: var(--teal); }
 .chip.on.c-lilac { background: var(--lilac); }
 .chip.on.c-sky   { background: var(--sky); }
 .chip.on.c-peach { background: var(--peach); }
 .chip.on.c-rose  { background: var(--rose); }
+/* לילך וורוד היו כהים מדי לטקסט כהה (3.9) — גוון בהיר במקצת מביא אותם ל-4.9 */
+.chip.on.c-lilac { background: #AEA0FF; }
+.chip.on.c-rose  { background: #F98AB6; }
+/* דגימות צבע (בורר צבע לפרויקט/אפליקציה) — הצבע עצמו הוא התוכן, בלי מסגרת */
+.chip[data-color] { border-color: transparent; }
 
 /* תגית קטנה על כרטיס משימה */
 .tag {
@@ -519,7 +538,10 @@ button.chip:hover { transform: translateY(-1px); }
   margin-bottom: 6px;
   display: flex; align-items: center; gap: 5px;
 }
-.field .chips .chip { box-shadow: none; background: var(--bg-soft); }
+/* חובה :not(.on) — אחרת הכלל הזה (שמופיע מאוחר יותר בקובץ, באותה עדיפות)
+   דורס את background של .chip.on.c-* והצ'יפ הנבחר יוצא רקע בהיר עם טקסט לבן. */
+.field .chips .chip:not(.on) { box-shadow: none; background: #fff; }
+.field .chips .chip.on { box-shadow: 0 3px 10px rgba(61, 58, 80, .2); }
 .sheet-actions {
   display: flex; gap: 10px; margin-top: 20px;
   align-items: center;
@@ -665,8 +687,9 @@ button.chip:hover { transform: translateY(-1px); }
 }
 .pill-toggle svg { color: var(--ink-soft); }
 .pill-toggle:hover { transform: translateY(-1px); border-color: var(--teal); }
-.pill-toggle.on { background: var(--teal); color: #fff; border-color: var(--teal); box-shadow: 0 4px 12px rgba(47,191,167,.35); }
-.pill-toggle.on svg { color: #fff; }
+/* גם כאן טקסט כהה — לבן על טורקיז פסטלי נותן 2.3 בלבד, כהה נותן 4.8 */
+.pill-toggle.on { background: var(--teal); color: var(--ink); border-color: var(--teal); box-shadow: 0 4px 12px rgba(47,191,167,.35); }
+.pill-toggle.on svg { color: var(--ink); }
 .pill-toggle.small { padding: 7px 11px; }
 @media (max-width: 500px) {
   .pill-toggle.small .fu-label { display: none; }
@@ -782,9 +805,10 @@ button.chip:hover { transform: translateY(-1px); }
   color: var(--ink-soft);
   transition: all .15s;
 }
-.seg-btn.on { color: #fff; box-shadow: 0 3px 10px rgba(61,58,80,.2); }
+.seg-btn.on { color: var(--ink); box-shadow: 0 3px 10px rgba(61,58,80,.2); }
+.seg-btn.on svg { color: var(--ink); }
 .seg-btn.on.c-sky   { background: var(--sky); }
-.seg-btn.on.c-lilac { background: var(--lilac); }
+.seg-btn.on.c-lilac { background: #AEA0FF; }
 .seg-btn.on.c-teal  { background: var(--teal); }
 
 .pill-row { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 6px; }
@@ -986,7 +1010,7 @@ button.chip:hover { transform: translateY(-1px); }
   color: var(--ink-soft);
   transition: all .15s;
 }
-.add-kind.on { background: var(--lilac); color: #fff; }
+.add-kind.on { background: #AEA0FF; color: var(--ink); }
 
 .done-toggle {
   display: flex; align-items: center; gap: 7px;
