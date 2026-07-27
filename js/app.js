@@ -55,6 +55,12 @@ function ic(name, size = 20) {
     mic: '<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/>',
     monitor: '<rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/>',
     refresh: '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>',
+    lightbulb: '<path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/>',
+    grip: '<circle cx="9" cy="12" r="1"/><circle cx="9" cy="5" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="19" r="1"/>',
+    heading: '<polyline points="4 7 4 4 20 4 20 7"/><line x1="9" x2="15" y1="20" y2="20"/><line x1="12" x2="12" y1="4" y2="20"/>',
+    messageSquare: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
+    search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+    cornerDownLeft: '<path d="M20 4v7a4 4 0 0 1-4 4H4"/><polyline points="9 10 4 15 9 20"/>',
   };
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${paths[name] || ''}</svg>`;
 }
@@ -93,7 +99,7 @@ const PRAISES = [
 
 /* ---------- מצב ---------- */
 let KEY = localStorage.getItem('tasks_key') || '';
-let DATA = { projects: [], tasks: [], trainings: [] };
+let DATA = { projects: [], tasks: [], trainings: [], apps: [], app_items: [] };
 let VIEW = localStorage.getItem('tasks_view') || 'now';
 let NOW_FILTER = JSON.parse(localStorage.getItem('tasks_now_filter') || '{"context":"","energy":"","size":""}');
 let OPEN_PROJECTS = new Set();
@@ -101,6 +107,9 @@ let EDITING = null;       // המשימה שנערכת בגיליון
 let TOAST_TIMER = null;
 let OFFLINE = false;      // אין רשת — עובדים מהמטמון המקומי
 let SHOW_FINISHED_TRAININGS = false;
+let OPEN_APPS = new Set();        // אילו כרטיסי אפליקציה פתוחים
+let SHOW_DONE_ITEMS = new Set();  // באילו אפליקציות מוצגים גם הפריטים שבוצעו
+let IDEAS_SEARCH = '';            // חיפוש חופשי ברעיונות ובפרומפטים
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -132,6 +141,8 @@ function normalizeData(d) {
   d.projects = d.projects || [];
   d.tasks = d.tasks || [];
   d.trainings = d.trainings || [];
+  d.apps = d.apps || [];
+  d.app_items = d.app_items || [];
   return d;
 }
 
@@ -288,6 +299,7 @@ const VIEWS = [
   { id: 'now',       label: 'עכשיו',    icon: 'sparkles' },
   { id: 'projects',  label: 'פרויקטים', icon: 'folder' },
   { id: 'all',       label: 'הכל',      icon: 'listTodo' },
+  { id: 'ideas',     label: 'רעיונות',  icon: 'lightbulb' },
   { id: 'trainings', label: 'הדרכות',   icon: 'presentation' },
   { id: 'wins',      label: 'נצחונות',  icon: 'trophy' },
 ];
@@ -324,9 +336,11 @@ function render() {
   if (VIEW === 'now') main.innerHTML = renderNow();
   else if (VIEW === 'projects') main.innerHTML = renderProjects();
   else if (VIEW === 'all') main.innerHTML = renderAll();
+  else if (VIEW === 'ideas') main.innerHTML = renderIdeas();
   else if (VIEW === 'trainings') main.innerHTML = renderTrainings();
   else if (VIEW === 'wins') main.innerHTML = renderWins();
   bindMain();
+  if (VIEW === 'ideas') bindIdeas();
   updateOfflineBadge();
 }
 
@@ -403,7 +417,10 @@ function renderNow() {
 
   const filtersOn = f.context || f.energy || f.size;
 
-  const nt = nextUpcomingTraining();
+  // רצועת ההדרכה הקרובה מופיעה רק כשהיא באמת קרובה — עד 10 ימים קדימה.
+  // רחוק מזה זה רק רעש; הרשימה המלאה תמיד בתצוגת "הדרכות".
+  const nt0 = nextUpcomingTraining();
+  const nt = (nt0 && daysUntil(nt0.date) <= 10) ? nt0 : null;
   const trainingStrip = nt ? `
     <button class="training-strip" id="goto-trainings">
       ${ic('presentation', 18)}
@@ -926,6 +943,378 @@ function openTrainingSheet(id) {
   };
 }
 
+/* ============ רעיונות לאפליקציות ============ */
+/* כל אפליקציה מחזיקה רשימה שטוחה ומסודרת אחת. פריט מסוג heading משמש ככותרת
+   קטנה בתוך הרשימה — כך גרירה אחת מסדרת גם כותרות וגם תוכן, בלי עץ מקונן. */
+
+const ITEM_KINDS = {
+  idea:    { label: 'רעיון',  icon: 'sparkles',      color: 'lilac' },
+  feature: { label: 'פיצ׳ר',  icon: 'zap',           color: 'sky' },
+  prompt:  { label: 'פרומפט', icon: 'messageSquare', color: 'peach' },
+  heading: { label: 'כותרת',  icon: 'heading',       color: 'gray' },
+};
+const KIND_CYCLE = ['idea', 'feature', 'prompt', 'heading'];
+let ADD_KIND = 'idea';
+
+function appsList() { return DATA.apps || []; }
+function itemsOf(appId) {
+  return (DATA.app_items || [])
+    .filter(i => i.app_id == appId)
+    .sort((a, b) => (a.sort_order - b.sort_order) || (a.id - b.id));
+}
+
+function itemRow(it) {
+  const k = ITEM_KINDS[it.kind] || ITEM_KINDS.idea;
+  const kindBtn = `<button class="item-kind t-${k.color}" data-cycle-kind="${it.id}" title="${k.label} — לחיצה מחליפה סוג">${ic(k.icon, 12)}</button>`;
+  const grip = `<button class="item-grip" data-handle title="גרירה לסידור">${ic('grip', 15)}</button>`;
+  const del = `<button class="item-del" data-del-item="${it.id}" title="מחיקה">${ic('x', 14)}</button>`;
+
+  if (it.kind === 'heading') {
+    return `
+    <div class="item-row is-heading" data-row="${it.id}">
+      ${grip}
+      <textarea class="item-title heading-title" data-field="title" data-id="${it.id}" rows="1" placeholder="כותרת קטנה">${esc(it.title)}</textarea>
+      ${kindBtn}${del}
+    </div>`;
+  }
+  return `
+  <div class="item-row ${it.done == 1 ? 'is-done' : ''}" data-row="${it.id}">
+    ${grip}
+    <button class="item-check ${it.done == 1 ? 'checked' : ''}" data-toggle-item="${it.id}" title="בוצע">${ic('check', 13)}</button>
+    <div class="item-main">
+      <textarea class="item-title" data-field="title" data-id="${it.id}" rows="1" placeholder="${it.kind === 'prompt' ? 'שם הפרומפט...' : 'מה הרעיון?'}">${esc(it.title)}</textarea>
+      ${it.kind === 'prompt' ? `
+        <div class="prompt-body">
+          <textarea class="item-body" data-field="body" data-id="${it.id}" rows="2" placeholder="הפרומפט עצמו — יישמר כאן לשימוש חוזר">${esc(it.body)}</textarea>
+          <button class="icon-btn prompt-copy" data-copy-item="${it.id}" title="העתקת הפרומפט">${ic('copy', 15)}</button>
+        </div>` : ''}
+    </div>
+    ${kindBtn}${del}
+  </div>`;
+}
+
+function appCard(app) {
+  const items = itemsOf(app.id);
+  const open = items.filter(i => i.done != 1);
+  const done = items.filter(i => i.done == 1);
+  const isOpen = OPEN_APPS.has(app.id);
+  const showDone = SHOW_DONE_ITEMS.has(app.id);
+  const ideasCount = open.filter(i => i.kind !== 'heading').length;
+
+  return `
+  <div class="card app-card ${isOpen ? 'open' : ''}">
+    <div class="app-head" data-toggle-app="${app.id}">
+      <span class="project-dot" style="background:${app.color || '#9B8CFF'}"></span>
+      <div style="flex:1;min-width:0">
+        <div class="project-name">${esc(app.name)}</div>
+        <div class="project-meta">${ideasCount ? `${ideasCount} פתוחים` : 'ריק בינתיים'}${done.length ? ` · ${done.length} בוצעו` : ''}</div>
+      </div>
+      <button class="icon-btn app-edit" data-edit-app="${app.id}" title="עריכה">${ic('pencil', 16)}</button>
+      <span class="project-chevron">${ic('chevronDown', 20)}</span>
+    </div>
+    ${isOpen ? `
+      ${app.notes ? `<div class="app-notes">${esc(app.notes)}</div>` : ''}
+      <div class="item-list" data-list="${app.id}">
+        ${open.map(itemRow).join('')}
+      </div>
+      ${!open.length ? '<div class="empty-state" style="padding:14px"><p class="sub">אפשר להתחיל לכתוב למטה</p></div>' : ''}
+      <div class="item-add">
+        <div class="add-kinds">
+          ${Object.entries(ITEM_KINDS).map(([k, v]) =>
+            `<button class="add-kind ${k === ADD_KIND ? 'on' : ''}" data-add-kind="${k}" title="${v.label}">${ic(v.icon, 14)}</button>`).join('')}
+        </div>
+        <input type="text" data-add-input="${app.id}" placeholder="להוסיף ולהקיש Enter...">
+      </div>
+      ${done.length ? `
+        <button class="done-toggle" data-toggle-done="${app.id}">
+          ${ic('chevronDown', 15)} בוצעו <span class="count">${done.length}</span>
+        </button>
+        ${showDone ? `<div class="item-list done-list" data-list="${app.id}">${done.map(itemRow).join('')}</div>` : ''}
+      ` : ''}
+    ` : ''}
+  </div>`;
+}
+
+function renderIdeasSearch(q) {
+  const needle = q.toLowerCase();
+  const appName = id => (appsList().find(a => a.id == id) || {}).name || '';
+  const hits = (DATA.app_items || []).filter(i =>
+    (i.title || '').toLowerCase().includes(needle) || (i.body || '').toLowerCase().includes(needle));
+  if (!hits.length) {
+    return `<div class="empty-state">${ic('search', 44)}<p>אין תוצאות ל"${esc(q)}"</p></div>`;
+  }
+  return `
+    <div class="section-title">${ic('search', 18)} תוצאות <span class="count">${hits.length}</span></div>
+    <div class="task-list">
+      ${hits.map(it => {
+        const k = ITEM_KINDS[it.kind] || ITEM_KINDS.idea;
+        return `
+        <div class="card search-hit" data-goto-app="${it.app_id}">
+          <div class="hit-top">
+            <span class="tag t-${k.color}">${ic(k.icon, 11)}${k.label}</span>
+            <span class="tag t-gray">${ic('lightbulb', 11)}${esc(appName(it.app_id))}</span>
+            ${it.done == 1 ? `<span class="tag t-teal">${ic('check', 11)}בוצע</span>` : ''}
+          </div>
+          <div class="hit-title">${esc(it.title || '(בלי כותרת)')}</div>
+          ${it.body ? `<div class="hit-body">${esc(it.body)}</div>` : ''}
+          ${it.kind === 'prompt' && it.body ? `<button class="btn btn-ghost hit-copy" data-copy-item="${it.id}">${ic('copy', 14)} העתקה</button>` : ''}
+        </div>`;
+      }).join('')}
+    </div>`;
+}
+
+function renderIdeas() {
+  const apps = appsList().filter(a => a.status !== 'archived');
+  const top = `
+    <div class="ideas-top">
+      <div class="ideas-search">
+        ${ic('search', 16)}
+        <input type="text" id="ideas-search" placeholder="חיפוש ברעיונות ובפרומפטים..." value="${esc(IDEAS_SEARCH)}">
+        ${IDEAS_SEARCH ? `<button class="icon-btn" id="ideas-search-clear" title="ניקוי">${ic('x', 15)}</button>` : ''}
+      </div>
+      <button class="btn btn-ghost" id="btn-new-app">${ic('plus', 16)} אפליקציה</button>
+    </div>`;
+
+  if (IDEAS_SEARCH.trim()) return top + renderIdeasSearch(IDEAS_SEARCH.trim());
+
+  return top + (apps.length
+    ? `<div class="apps-grid">${apps.map(appCard).join('')}</div>`
+    : `<div class="empty-state">${ic('lightbulb', 44)}<p>עוד אין רעיונות לאפליקציות</p><p class="sub">כל אפליקציה מקבלת מקום משלה לרעיונות, פיצ'רים ופרומפטים</p></div>`);
+}
+
+/* ---------- פעולות על רעיונות ---------- */
+
+async function apiQueued(action, payload, okMsg) {
+  try {
+    const res = await api(action, payload);
+    if (okMsg) toast(okMsg);
+    return res;
+  } catch (e) {
+    if (e.isNetwork) { OFFLINE = true; queuePush(action, payload); toast('נשמר במכשיר — יסונכרן כשתחזור הרשת'); }
+    else toast('אופס — ' + e.message);
+    return null;
+  }
+}
+
+async function saveItemField(id, field, value) {
+  const it = (DATA.app_items || []).find(x => x.id == id);
+  if (!it || (it[field] || '') === value) return;
+  it[field] = value;
+  saveCache();
+  await apiQueued('item_upsert', { id, [field]: value });
+}
+
+async function toggleItemDone(id) {
+  const it = (DATA.app_items || []).find(x => x.id == id);
+  if (!it) return;
+  it.done = it.done == 1 ? 0 : 1;
+  saveCache();
+  render();
+  await apiQueued('item_upsert', { id, done: it.done });
+}
+
+async function cycleItemKind(id) {
+  const it = (DATA.app_items || []).find(x => x.id == id);
+  if (!it) return;
+  const next = KIND_CYCLE[(KIND_CYCLE.indexOf(it.kind) + 1) % KIND_CYCLE.length];
+  it.kind = next;
+  saveCache();
+  render();
+  await apiQueued('item_upsert', { id, kind: next });
+}
+
+async function addAppItem(appId, kind, title) {
+  const res = await apiQueued('item_upsert', { app_id: +appId, kind, title });
+  if (res && res.item) {
+    DATA.app_items = DATA.app_items || [];
+    DATA.app_items.push(res.item);
+    saveCache();
+    render();
+    // מחזירים את הפוקוס לשורת ההוספה כדי לכתוב עוד רעיון ברצף
+    const inp = $(`[data-add-input="${appId}"]`);
+    if (inp) inp.focus();
+  }
+}
+
+async function deleteAppItem(id) {
+  DATA.app_items = (DATA.app_items || []).filter(x => x.id != id);
+  saveCache();
+  render();
+  await apiQueued('item_delete', { id });
+}
+
+async function reorderAppItems(ids) {
+  ids.forEach((id, i) => {
+    const it = (DATA.app_items || []).find(x => x.id == id);
+    if (it) it.sort_order = i + 1;
+  });
+  saveCache();
+  await apiQueued('items_reorder', { ids });
+}
+
+/** גרירה לסידור מחדש — מבוססת pointer events כדי שתעבוד גם במגע בנייד. */
+function enableDragSort(container, onDrop) {
+  let dragEl = null;
+
+  const onMove = e => {
+    if (!dragEl) return;
+    e.preventDefault();
+    const under = document.elementFromPoint(e.clientX, e.clientY);
+    const row = under && under.closest('[data-row]');
+    if (!row || row === dragEl || row.parentElement !== container) return;
+    const r = row.getBoundingClientRect();
+    const after = e.clientY > r.top + r.height / 2;
+    container.insertBefore(dragEl, after ? row.nextSibling : row);
+  };
+
+  const onUp = () => {
+    if (!dragEl) return;
+    dragEl.classList.remove('dragging');
+    dragEl = null;
+    document.removeEventListener('pointermove', onMove);
+    document.removeEventListener('pointerup', onUp);
+    document.removeEventListener('pointercancel', onUp);
+    onDrop([...container.querySelectorAll('[data-row]')].map(r => +r.dataset.row));
+  };
+
+  container.querySelectorAll('[data-handle]').forEach(h => {
+    h.addEventListener('pointerdown', e => {
+      e.preventDefault();
+      dragEl = h.closest('[data-row]');
+      if (!dragEl) return;
+      dragEl.classList.add('dragging');   // pointer-events:none — כדי ש-elementFromPoint יראה מה שמתחת
+      document.addEventListener('pointermove', onMove, { passive: false });
+      document.addEventListener('pointerup', onUp);
+      document.addEventListener('pointercancel', onUp);
+    });
+  });
+}
+
+function bindIdeas() {
+  const search = $('#ideas-search');
+  if (search) {
+    search.oninput = () => {
+      IDEAS_SEARCH = search.value;
+      const pos = search.selectionStart;
+      render();
+      const s2 = $('#ideas-search');
+      if (s2) { s2.focus(); s2.setSelectionRange(pos, pos); }
+    };
+  }
+  const clr = $('#ideas-search-clear');
+  if (clr) clr.onclick = () => { IDEAS_SEARCH = ''; render(); };
+
+  const na = $('#btn-new-app');
+  if (na) na.onclick = () => openAppModal(null);
+
+  $$('[data-toggle-app]').forEach(el => el.onclick = e => {
+    if (e.target.closest('[data-edit-app]')) return;
+    const id = +el.dataset.toggleApp;
+    OPEN_APPS.has(id) ? OPEN_APPS.delete(id) : OPEN_APPS.add(id);
+    render();
+  });
+  $$('[data-edit-app]').forEach(b => b.onclick = e => {
+    e.stopPropagation();
+    openAppModal(+b.dataset.editApp);
+  });
+  $$('[data-toggle-done]').forEach(b => b.onclick = () => {
+    const id = +b.dataset.toggleDone;
+    SHOW_DONE_ITEMS.has(id) ? SHOW_DONE_ITEMS.delete(id) : SHOW_DONE_ITEMS.add(id);
+    render();
+  });
+
+  $$('[data-toggle-item]').forEach(b => b.onclick = () => toggleItemDone(+b.dataset.toggleItem));
+  $$('[data-cycle-kind]').forEach(b => b.onclick = () => cycleItemKind(+b.dataset.cycleKind));
+  $$('[data-del-item]').forEach(b => b.onclick = () => deleteAppItem(+b.dataset.delItem));
+  $$('[data-copy-item]').forEach(b => b.onclick = e => {
+    e.stopPropagation();
+    const it = (DATA.app_items || []).find(x => x.id == b.dataset.copyItem);
+    if (it) copyText(it.body || it.title);
+  });
+  $$('[data-goto-app]').forEach(el => el.onclick = e => {
+    if (e.target.closest('[data-copy-item]')) return;
+    OPEN_APPS.add(+el.dataset.gotoApp);
+    IDEAS_SEARCH = '';
+    render();
+  });
+
+  // עריכה חיה: כותרות וגופי פרומפט נשמרים ביציאה מהשדה, בלי רינדור מחדש (שלא לאבד פוקוס)
+  const grow = el => { el.style.height = 'auto'; el.style.height = (el.scrollHeight + 2) + 'px'; };
+  $$('#main .item-title, #main .item-body').forEach(el => {
+    grow(el);
+    el.addEventListener('input', () => grow(el));
+    el.addEventListener('blur', () => saveItemField(+el.dataset.id, el.dataset.field, el.value.trim()));
+    el.addEventListener('keydown', e => {
+      if (e.key === 'Enter' && !e.shiftKey && el.dataset.field === 'title') { e.preventDefault(); el.blur(); }
+    });
+  });
+
+  $$('[data-add-kind]').forEach(b => b.onclick = () => {
+    ADD_KIND = b.dataset.addKind;
+    $$('[data-add-kind]').forEach(x => x.classList.toggle('on', x.dataset.addKind === ADD_KIND));
+  });
+  $$('[data-add-input]').forEach(inp => inp.onkeydown = e => {
+    if (e.key !== 'Enter') return;
+    const title = inp.value.trim();
+    if (!title) return;
+    inp.value = '';
+    addAppItem(inp.dataset.addInput, ADD_KIND, title);
+  });
+
+  $$('#main [data-list]').forEach(list => enableDragSort(list, reorderAppItems));
+}
+
+function openAppModal(id) {
+  const a = id ? appsList().find(x => x.id == id)
+               : { name: '', notes: '', color: PROJECT_COLORS[appsList().length % PROJECT_COLORS.length], status: 'active' };
+  openModal(`
+    <h3>${ic('lightbulb', 20)} ${id ? 'עריכת אפליקציה' : 'אפליקציה חדשה'}</h3>
+    <div class="field"><input type="text" id="app-name" placeholder="שם האפליקציה" value="${esc(a.name)}"></div>
+    <div class="field"><textarea id="app-notes" placeholder="במשפט — על מה האפליקציה? (לא חובה)">${esc(a.notes)}</textarea></div>
+    <div class="field">
+      <div class="field-label">צבע</div>
+      <div class="chips">${PROJECT_COLORS.map(c => `
+        <button class="chip" data-color="${c}" style="background:${c};width:38px;height:38px;padding:0;${a.color === c ? 'outline:3px solid var(--ink);outline-offset:2px' : ''}"></button>`).join('')}
+      </div>
+    </div>
+    <div class="sheet-actions">
+      ${id ? `<button class="btn btn-danger" id="app-del" title="מחיקה">${ic('trash', 17)}</button>` : ''}
+      <button class="btn btn-ghost" id="app-cancel">ביטול</button>
+      <button class="btn btn-primary" id="app-save">${id ? 'שמירה' : 'יצירה'}</button>
+    </div>`);
+
+  let color = a.color;
+  $$('#modal [data-color]').forEach(b => b.onclick = () => {
+    color = b.dataset.color;
+    $$('#modal [data-color]').forEach(x => x.style.outline = x.dataset.color === color ? '3px solid var(--ink)' : 'none');
+  });
+  $('#app-cancel').onclick = closeModal;
+  $('#app-save').onclick = async () => {
+    const name = $('#app-name').value.trim();
+    if (!name) { $('#app-name').focus(); return; }
+    const payload = { name, notes: $('#app-notes').value.trim(), color };
+    if (id) payload.id = id;
+    closeModal();
+    const res = await apiQueued('app_upsert', payload, id ? 'עודכן' : 'נוצרה אפליקציה חדשה!');
+    if (res && res.app) {
+      DATA.apps = DATA.apps || [];
+      const i = DATA.apps.findIndex(x => x.id == res.app.id);
+      if (i >= 0) DATA.apps[i] = res.app; else { DATA.apps.push(res.app); OPEN_APPS.add(res.app.id); }
+      saveCache();
+    }
+    render();
+  };
+  const del = $('#app-del');
+  if (del) del.onclick = async () => {
+    closeModal();
+    DATA.apps = appsList().filter(x => x.id != id);
+    DATA.app_items = (DATA.app_items || []).filter(x => x.app_id != id);
+    saveCache();
+    render();
+    await apiQueued('app_delete', { id }, 'נמחקה (אפשר לשחזר מההיסטוריה)');
+  };
+}
+
 /* ---------- תצוגת נצחונות ---------- */
 function renderWins() {
   const done = doneTasks();
@@ -1111,10 +1500,11 @@ async function completeTask(id, btn) {
     t.status = 'done';
     t.completed_at = new Date().toISOString().slice(0, 19).replace('T', ' ');
     render();
-    toastUndo(PRAISES[Math.floor(Math.random() * PRAISES.length)], async () => {
-      await api('task_reopen', { id });
-      await reload();
-    });
+    // הרגע הכי טבעי לשרשר: "סיימתי להכין — עכשיו צריך להפיץ"
+    toastActions(PRAISES[Math.floor(Math.random() * PRAISES.length)], [
+      { label: 'המשך', fn: () => openFollowUp(t) },
+      { label: 'ביטול', fn: async () => { await api('task_reopen', { id }); await reload(); } },
+    ]);
     try {
       await api('task_complete', { id });
     } catch (e) { toast('אופס, לא נשמר — ' + e.message); await reload(); }
@@ -1167,10 +1557,11 @@ function openDeferPop(id, anchor) {
 }
 
 /* ---------- גיליון עריכה ---------- */
-function openTaskSheet(id) {
+function openTaskSheet(id, prefill = null) {
   EDITING = id ? { ...DATA.tasks.find(t => t.id == id) } : {
     title: '', notes: '', project_id: '', status: 'inbox',
     context: '', energy: '', size: '', due_date: '', is_next: 0,
+    ...(prefill || {}),
   };
   const t = EDITING;
   const isNew = !id;
@@ -1183,6 +1574,7 @@ function openTaskSheet(id) {
   $('#task-sheet').innerHTML = `
     <div class="sheet-handle"></div>
     <h3>${isNew ? 'משימה חדשה' : 'עריכת משימה'}</h3>
+    ${isNew ? '<div id="sheet-followup-hint" class="followup-hint"></div>' : ''}
     <div class="field">
       <input type="text" id="sheet-title" placeholder="מה המשימה?" value="${esc(t.title)}">
     </div>
@@ -1221,6 +1613,10 @@ function openTaskSheet(id) {
       <div class="field-label">${ic('clock', 13)} כמה זמן / גודל</div>
       <div class="chips">${chipRow('size', SIZE)}</div>
     </div>
+    ${!isNew ? `
+    <button class="btn btn-ghost followup-btn" id="sheet-followup">
+      ${ic('cornerDownLeft', 16)} משימת המשך באותו פרויקט
+    </button>` : ''}
     <div class="sheet-actions">
       ${!isNew ? `<button class="btn btn-danger" id="sheet-delete" title="מחיקה">${ic('trash', 17)}</button>` : ''}
       <button class="btn btn-ghost" id="sheet-cancel">ביטול</button>
@@ -1256,6 +1652,22 @@ function openTaskSheet(id) {
     if (isNew) await createTask(fields);
     else await updateTask(id, fields);
   };
+  const fup = $('#sheet-followup');
+  if (fup) fup.onclick = async () => {
+    // שומרים קודם את מה שנערך, ואז פותחים משימה חדשה שיורשת את ההקשר
+    const fields = {
+      title: $('#sheet-title').value.trim(),
+      notes: $('#sheet-notes').value.trim(),
+      project_id: $('#sheet-project').value || null,
+      due_date: $('#sheet-due').value,
+      status: EDITING.status, context: EDITING.context,
+      energy: EDITING.energy, size: EDITING.size,
+    };
+    closeSheet();
+    if (fields.title) await updateTask(id, fields);
+    openFollowUp({ ...fields, id });
+  };
+
   const del = $('#sheet-delete');
   if (del) del.onclick = async () => {
     closeSheet();
@@ -1264,6 +1676,19 @@ function openTaskSheet(id) {
     render();
     toast('נמחקה (אפשר לשחזר מההיסטוריה)');
   };
+}
+
+/** משימת המשך: יורשת פרויקט והקשר מהמשימה שהסתיימה, כך שהשרשור נשאר במקום אחד. */
+function openFollowUp(prev) {
+  if (!prev) return;
+  openTaskSheet(null, {
+    project_id: prev.project_id || '',
+    context: prev.context || '',
+    energy: prev.energy || '',
+    status: 'next',
+  });
+  const hint = $('#sheet-followup-hint');
+  if (hint && prev.title) hint.textContent = 'ממשיך את: ' + prev.title;
 }
 
 function closeSheet() {
@@ -1536,16 +1961,22 @@ function toast(msg) {
   TOAST_TIMER = setTimeout(() => el.classList.add('hidden'), 2600);
 }
 
-function toastUndo(msg, onUndo) {
+/** טוסט עם כפתורי פעולה. actions = [{label, fn}] */
+function toastActions(msg, actions) {
   const el = $('#toast');
-  el.innerHTML = `${esc(msg)} <button class="toast-action">ביטול</button>`;
+  el.innerHTML = esc(msg) + actions.map((a, i) =>
+    `<button class="toast-action" data-ta="${i}">${esc(a.label)}</button>`).join('');
   el.classList.remove('hidden');
-  el.querySelector('.toast-action').onclick = async () => {
+  el.querySelectorAll('[data-ta]').forEach(b => b.onclick = async () => {
     el.classList.add('hidden');
-    await onUndo();
-  };
+    await actions[+b.dataset.ta].fn();
+  });
   clearTimeout(TOAST_TIMER);
-  TOAST_TIMER = setTimeout(() => el.classList.add('hidden'), 4000);
+  TOAST_TIMER = setTimeout(() => el.classList.add('hidden'), 5000);
+}
+
+function toastUndo(msg, onUndo) {
+  toastActions(msg, [{ label: 'ביטול', fn: onUndo }]);
 }
 
 /* ---------- קונפטי ---------- */

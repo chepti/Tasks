@@ -52,6 +52,14 @@ https://chepti.com/tasks/api/api.php?action=help
   equipment, structure, message, slides_url, recording_url,
   fu_recording/fu_whatsapp/fu_takeaways (0/1 — צ'קליסט המשך), notes.
 - state מחזיר upcoming_trainings. הרשימה המלאה ב-?action=all.
+
+יש גם אזור "רעיונות לאפליקציות":
+- action=app_upsert יוצר/מעדכן אפליקציה: {id?, name, notes?, color?}
+- action=item_upsert מוסיף שורה בתוכה: {id?, app_id, kind, title, body?, done?}
+  kind = heading (כותרת מקבצת) / idea / feature / prompt (טקסט הפרומפט ב-body).
+- action=items_reorder עם {ids:[...]} קובע את הסדר; action=item_delete מוחק.
+- כשמדביקים ערימת רעיונות לאפליקציה — לפצל לשורות, לסווג לפי kind, ואפשר
+  להוסיף heading כדי לקבץ נושאים.
 ```
 
 ---

@@ -25,6 +25,14 @@
 - `POST ?action=training_delete` — `{"id":N}`
 - `?action=state` מחזיר גם `upcoming_trainings` (חמש הקרובות).
 
+## רעיונות לאפליקציות (apps / app_items)
+- `POST ?action=app_upsert` — אפליקציה: `{"id"?, "name", "notes"?, "color"?}`
+- `POST ?action=item_upsert` — שורה בתוך אפליקציה: `{"id"?, "app_id", "kind", "title", "body"?, "done"?}`
+  `kind` = `heading` (כותרת קטנה שמקבצת) / `idea` / `feature` / `prompt` (הטקסט המלא ב-body).
+  פריט חדש נכנס לסוף הרשימה אוטומטית.
+- `POST ?action=item_delete` — `{"id":N}` · `POST ?action=items_reorder` — `{"ids":[...]}` לפי סדר רצוי
+- `?action=all` מחזיר גם `apps` ו-`app_items`.
+
 ## כללי זהב
 - אפשר לפנות למשימה לפי `match` (חלק מהכותרת) במקום `id` — אין צורך למשוך רשימה ולנחש מזהים.
 - אפשר לתת `project` בשם; הוא יימצא או ייווצר אוטומטית.

@@ -51,6 +51,8 @@ const ENUMS = [
 ];
 
 const TMODE_LABELS = ['physical' => 'פיזי', 'online' => 'מקוון', 'hybrid' => 'היברידי'];
+const APP_FIELDS = ['name','notes','color','status','sort_order'];
+const APP_ITEM_FIELDS = ['app_id','kind','title','body','done','sort_order'];
 
 function baseUrl() {
     $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
@@ -130,6 +132,11 @@ function helpDoc() {
             'project_delete' => 'POST — { id } (archives it).',
             'training_upsert'=> 'POST — create/update a training session. Update by {id}, or by {client_id} if it exists, else insert. See training_fields.',
             'training_delete'=> 'POST — { id } (snapshot kept for restore).',
+            'app_upsert'     => 'POST — app-idea container: { id?, name, notes?, color?, status? }.',
+            'app_delete'     => 'POST — { id } (deletes its items too; snapshot kept).',
+            'item_upsert'    => 'POST — one line inside an app: { id?, app_id, kind, title, body?, done? }. kind = heading | idea | feature | prompt. A "prompt" keeps its text in body. New items go to the end.',
+            'item_delete'    => 'POST — { id }.',
+            'items_reorder'  => 'POST — { ids:[...] } sets sort_order by array position (drag & drop).',
             'ops'            => 'POST — { ops:[ {action, ...}, ... ] } run in order; returns per-op ok/error. One round-trip for many changes.',
             'history'        => 'GET  — ?limit=100 recent changes with before-snapshots.',
             'restore'        => 'POST — { history_id } revert an item to that snapshot.',
@@ -318,6 +325,32 @@ foreach ([
 ] as $col => $decl) {
     try { $db->exec("ALTER TABLE trainings ADD COLUMN $col $decl"); } catch (Throwable $e) { /* exists */ }
 }
+
+// רעיונות לאפליקציות: כל אפליקציה היא מיכל, ובתוכה רשימה מסודרת אחת של פריטים.
+// היררכיה קלה מושגת ע"י פריט מסוג heading שמשמש ככותרת קטנה בתוך הרשימה —
+// כך גרירה אחת מסדרת גם כותרות וגם תוכן, בלי עצים מקוננים.
+$db->exec("CREATE TABLE IF NOT EXISTS apps (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    notes TEXT DEFAULT '',
+    color TEXT DEFAULT '',
+    status TEXT DEFAULT 'active',       -- active | someday | done | archived
+    sort_order INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+)");
+$db->exec("CREATE TABLE IF NOT EXISTS app_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    app_id INTEGER NOT NULL,
+    kind TEXT DEFAULT 'idea',           -- heading | idea | feature | prompt
+    title TEXT DEFAULT '',
+    body TEXT DEFAULT '',               -- לפרומפטים: גוף הפרומפט עצמו
+    done INTEGER DEFAULT 0,
+    sort_order INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+)");
+$db->exec("CREATE INDEX IF NOT EXISTS idx_app_items_app ON app_items(app_id, sort_order)");
 
 $db->exec("CREATE TABLE IF NOT EXISTS history (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -770,6 +803,8 @@ function dispatch($db, $action, $data) {
             'projects' => $db->query("SELECT * FROM projects ORDER BY sort_order, id")->fetchAll(PDO::FETCH_ASSOC),
             'tasks' => $db->query("SELECT * FROM tasks ORDER BY sort_order, id")->fetchAll(PDO::FETCH_ASSOC),
             'trainings' => $db->query("SELECT * FROM trainings ORDER BY CASE WHEN date='' THEN 1 ELSE 0 END, date, id")->fetchAll(PDO::FETCH_ASSOC),
+            'apps' => $db->query("SELECT * FROM apps ORDER BY sort_order, id")->fetchAll(PDO::FETCH_ASSOC),
+            'app_items' => $db->query("SELECT * FROM app_items ORDER BY app_id, sort_order, id")->fetchAll(PDO::FETCH_ASSOC),
             'now' => gmdate('Y-m-d H:i:s'),
         ];
     }
@@ -820,6 +855,79 @@ function dispatch($db, $action, $data) {
         gcalDeleteEvent($db, $before['gcal_event_id']);
         $db->prepare("DELETE FROM trainings WHERE id = ?")->execute([$id]);
         return ['deleted' => $id];
+    }
+
+    case 'app_upsert': {
+        $id = (int)($data['id'] ?? 0);
+        if ($id) return ['app' => updateEntity($db, 'apps', 'app', $data, APP_FIELDS)];
+        $name = trim($data['name'] ?? '');
+        if ($name === '') fail('name required');
+        $cols = ['name']; $vals = [$name];
+        foreach (APP_FIELDS as $f) {
+            if ($f !== 'name' && array_key_exists($f, $data)) { $cols[] = $f; $vals[] = $data[$f]; }
+        }
+        $ph = implode(',', array_fill(0, count($cols), '?'));
+        $db->prepare("INSERT INTO apps (" . implode(',', $cols) . ") VALUES ($ph)")->execute($vals);
+        $row = rowOrFail($db, 'apps', (int)$db->lastInsertId());
+        logHistory($db, 'app', $row['id'], 'create', $row);
+        return ['app' => $row];
+    }
+
+    case 'app_delete': {
+        $id = (int)($data['id'] ?? 0);
+        $before = rowOrFail($db, 'apps', $id);
+        $before['items'] = $db->query("SELECT * FROM app_items WHERE app_id = $id")->fetchAll(PDO::FETCH_ASSOC);
+        logHistory($db, 'app', $id, 'delete', $before);
+        $db->prepare("DELETE FROM app_items WHERE app_id = ?")->execute([$id]);
+        $db->prepare("DELETE FROM apps WHERE id = ?")->execute([$id]);
+        return ['deleted' => $id];
+    }
+
+    case 'item_upsert': {
+        $id = (int)($data['id'] ?? 0);
+        if ($id) {
+            $sets = []; $vals = [];
+            foreach (APP_ITEM_FIELDS as $f) {
+                if (array_key_exists($f, $data)) { $sets[] = "$f = ?"; $vals[] = $data[$f]; }
+            }
+            if (!$sets) fail('no fields to update');
+            rowOrFail($db, 'app_items', $id);
+            $sets[] = "updated_at = datetime('now')";
+            $vals[] = $id;
+            $db->prepare("UPDATE app_items SET " . implode(', ', $sets) . " WHERE id = ?")->execute($vals);
+            return ['item' => rowOrFail($db, 'app_items', $id)];
+        }
+        $appId = (int)($data['app_id'] ?? 0);
+        if (!$appId) fail('app_id required');
+        // חדש נכנס לסוף הרשימה של אותה אפליקציה
+        if (!array_key_exists('sort_order', $data)) {
+            $st = $db->prepare("SELECT COALESCE(MAX(sort_order), 0) + 1 FROM app_items WHERE app_id = ?");
+            $st->execute([$appId]);
+            $data['sort_order'] = (int)$st->fetchColumn();
+        }
+        $cols = []; $vals = [];
+        foreach (APP_ITEM_FIELDS as $f) {
+            if (array_key_exists($f, $data)) { $cols[] = $f; $vals[] = $data[$f]; }
+        }
+        $ph = implode(',', array_fill(0, count($cols), '?'));
+        $db->prepare("INSERT INTO app_items (" . implode(',', $cols) . ") VALUES ($ph)")->execute($vals);
+        return ['item' => rowOrFail($db, 'app_items', (int)$db->lastInsertId())];
+    }
+
+    case 'item_delete': {
+        $id = (int)($data['id'] ?? 0);
+        $before = rowOrFail($db, 'app_items', $id);
+        logHistory($db, 'app_item', $id, 'delete', $before);
+        $db->prepare("DELETE FROM app_items WHERE id = ?")->execute([$id]);
+        return ['deleted' => $id];
+    }
+
+    case 'items_reorder': {
+        $ids = $data['ids'] ?? [];
+        if (!is_array($ids) || !$ids) fail('ids array required');
+        $st = $db->prepare("UPDATE app_items SET sort_order = ? WHERE id = ?");
+        foreach (array_values($ids) as $i => $itemId) $st->execute([$i + 1, (int)$itemId]);
+        return ['ok' => true, 'count' => count($ids)];
     }
 
     case 'task_create':
@@ -901,8 +1009,8 @@ function dispatch($db, $action, $data) {
         $h = rowOrFail($db, 'history', $hid);
         $snap = json_decode($h['snapshot'], true);
         if (!$snap || empty($snap['id'])) fail('bad snapshot');
-        $tables = ['project' => 'projects', 'training' => 'trainings', 'task' => 'tasks'];
-        $fields = ['project' => PROJECT_FIELDS, 'training' => TRAINING_FIELDS, 'task' => TASK_FIELDS];
+        $tables = ['project' => 'projects', 'training' => 'trainings', 'app' => 'apps', 'app_item' => 'app_items', 'task' => 'tasks'];
+        $fields = ['project' => PROJECT_FIELDS, 'training' => TRAINING_FIELDS, 'app' => APP_FIELDS, 'app_item' => APP_ITEM_FIELDS, 'task' => TASK_FIELDS];
         $table = $tables[$h['entity']] ?? 'tasks';
         $allowed = $fields[$h['entity']] ?? TASK_FIELDS;
         $st = $db->prepare("SELECT * FROM $table WHERE id = ?");
@@ -995,6 +1103,8 @@ function dispatch($db, $action, $data) {
             'projects' => $db->query("SELECT * FROM projects")->fetchAll(PDO::FETCH_ASSOC),
             'tasks' => $db->query("SELECT * FROM tasks")->fetchAll(PDO::FETCH_ASSOC),
             'trainings' => $db->query("SELECT * FROM trainings")->fetchAll(PDO::FETCH_ASSOC),
+            'apps' => $db->query("SELECT * FROM apps")->fetchAll(PDO::FETCH_ASSOC),
+            'app_items' => $db->query("SELECT * FROM app_items")->fetchAll(PDO::FETCH_ASSOC),
             'history' => array_map(
                 function ($r) { $r['snapshot'] = json_decode($r['snapshot'], true); return $r; },
                 $db->query("SELECT * FROM history")->fetchAll(PDO::FETCH_ASSOC)
