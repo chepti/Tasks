@@ -44,7 +44,7 @@ const TRAINING_FIELDS = ['client_id','topic','place','mode','date','time_from','
     'slides_url','recording_url','fu_recording','fu_whatsapp','fu_takeaways','notes'];
 
 const ENUMS = [
-    'status'  => ['inbox','next','waiting','someday','done','dropped'],
+    'status'  => ['draft','inbox','next','waiting','someday','done','dropped'],
     'context' => ['home','out','computer','phone','errand',''],
     'energy'  => ['low','medium','high',''],
     'size'    => ['small','medium','big',''],
@@ -96,7 +96,7 @@ function helpDoc() {
             'notes' => 'free text',
             'project_id' => 'number or null — or use "project" (name) instead',
             'project' => 'project NAME; resolved to an existing project or a new one is created (write actions only)',
-            'status' => 'one of ' . implode(' / ', ENUMS['status']),
+            'status' => 'one of ' . implode(' / ', ENUMS['status']) . '. Use "draft" for bulk-captured items that the owner should approve first — drafts are hidden from every normal view and surface only in the review screen.',
             'context' => 'where it happens: ' . implode(' / ', array_filter(ENUMS['context'])),
             'energy' => 'how much energy it needs: low / medium / high',
             'size' => 'how big/long: small / medium / big',
@@ -784,7 +784,7 @@ function dispatch($db, $action, $data) {
     case 'state': {
         $projMap = projectMap($db);
         $projects = $db->query("SELECT id, name, color, status FROM projects WHERE status != 'archived' ORDER BY sort_order, id")->fetchAll(PDO::FETCH_ASSOC);
-        $tasks = $db->query("SELECT * FROM tasks WHERE status NOT IN ('done','dropped') ORDER BY is_next DESC, sort_order, id")->fetchAll(PDO::FETCH_ASSOC);
+        $tasks = $db->query("SELECT * FROM tasks WHERE status NOT IN ('done','dropped','draft') ORDER BY is_next DESC, sort_order, id")->fetchAll(PDO::FETCH_ASSOC);
         $open = array_map(function ($t) use ($projMap) { return compactTask($t, $projMap); }, $tasks);
         $doneToday = $db->query("SELECT COUNT(*) FROM tasks WHERE status='done' AND completed_at >= '" . gmdate('Y-m-d') . " 00:00:00'")->fetchColumn();
         $st = $db->prepare("SELECT id, topic, place, date, time_from, time_to FROM trainings WHERE date >= ? ORDER BY date LIMIT 5");

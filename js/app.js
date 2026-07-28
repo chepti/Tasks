@@ -254,8 +254,10 @@ function timeAgo(s) {
 /* ---------- עזרי נתונים ---------- */
 function projectOf(t) { return DATA.projects.find(p => p.id == t.project_id) || null; }
 function openTasks() {
-  return DATA.tasks.filter(t => !['done', 'dropped'].includes(t.status));
+  // 'draft' = נקלט אוטומטית וממתין לאישור — לא נחשב משימה פעילה עד שמאשרים
+  return DATA.tasks.filter(t => !['done', 'dropped', 'draft'].includes(t.status));
 }
+function draftTasks() { return DATA.tasks.filter(t => t.status === 'draft'); }
 function isSnoozed(t) {
   return t.snoozed_until && parseUTC(t.snoozed_until) > new Date();
 }
@@ -305,9 +307,15 @@ const VIEWS = [
 ];
 
 function renderNav() {
-  const html = VIEWS.map(v => `
+  const pending = draftTasks().length;
+  // "לאישור" מופיע בניווט רק כשיש משהו שממתין — אחרת הוא סתם תופס מקום
+  const views = pending
+    ? [...VIEWS.slice(0, 3), { id: 'review', label: 'לאישור', icon: 'inbox', badge: pending }, ...VIEWS.slice(3)]
+    : VIEWS;
+  const html = views.map(v => `
     <button class="nav-item ${VIEW === v.id ? 'active' : ''}" data-view="${v.id}">
       ${ic(v.icon, 22)}<span>${v.label}</span>
+      ${v.badge ? `<span class="nav-badge">${v.badge}</span>` : ''}
     </button>`).join('');
   $('#bottomnav').innerHTML = html;
   $('#topnav').innerHTML = html;
@@ -337,10 +345,12 @@ function render() {
   else if (VIEW === 'projects') main.innerHTML = renderProjects();
   else if (VIEW === 'all') main.innerHTML = renderAll();
   else if (VIEW === 'ideas') main.innerHTML = renderIdeas();
+  else if (VIEW === 'review') main.innerHTML = renderReview();
   else if (VIEW === 'trainings') main.innerHTML = renderTrainings();
   else if (VIEW === 'wins') main.innerHTML = renderWins();
   bindMain();
   if (VIEW === 'ideas') bindIdeas();
+  if (VIEW === 'review') bindReview();
   updateOfflineBadge();
 }
 
@@ -392,7 +402,7 @@ function taskCard(t, { defer = false, withProject = true } = {}) {
 
 /* ---------- תצוגת עכשיו ---------- */
 function nowMatches(t) {
-  if (['done', 'dropped', 'someday', 'waiting'].includes(t.status)) return false;
+  if (['done', 'dropped', 'draft', 'someday', 'waiting'].includes(t.status)) return false;
   if (isSnoozed(t)) return false;
   const f = NOW_FILTER;
   if (f.context && t.context && t.context !== f.context) return false;
@@ -464,7 +474,7 @@ function renderProjects() {
   const someday = DATA.projects.filter(p => p.status === 'someday');
 
   const projCard = p => {
-    const tasks = DATA.tasks.filter(t => t.project_id == p.id && t.status !== 'dropped');
+    const tasks = DATA.tasks.filter(t => t.project_id == p.id && !['dropped', 'draft'].includes(t.status));
     const open = tasks.filter(t => t.status !== 'done');
     const done = tasks.length - open.length;
     const pct = tasks.length ? Math.round(done / tasks.length * 100) : 0;
@@ -940,6 +950,130 @@ function openTrainingSheet(id) {
       } else toast('אופס — ' + e.message);
     }
     saveCache(); render();
+  };
+}
+
+/* ============ מסך אישור קליטה ============ */
+/* משימות שנקלטו אוטומטית (למשל מייצוא ווטסאפ) נכנסות כ-status='draft' ולא
+   מופיעות באף תצוגה רגילה, עד שמאשרים אותן כאן. אישור = הפיכה ל-inbox. */
+
+function renderReview() {
+  const drafts = draftTasks();
+  if (!drafts.length) {
+    return `<div class="empty-state">${ic('smile', 44)}<p>אין כלום שממתין לאישור</p>
+      <p class="sub">כל מה שנקלט אוטומטית יופיע כאן קודם, ורק מה שתאשרי ייכנס לרשימה</p></div>`;
+  }
+
+  // קיבוץ לפי פרויקט, כדי לאשר נושא שלם בבת אחת
+  const byProject = {};
+  for (const t of drafts) {
+    const key = t.project_id || 0;
+    (byProject[key] = byProject[key] || []).push(t);
+  }
+  const projName = id => (DATA.projects.find(p => p.id == id) || {}).name || 'בלי פרויקט';
+  const projColor = id => (DATA.projects.find(p => p.id == id) || {}).color || '#C3C0D2';
+
+  return `
+  <div class="review-hero">
+    <div>
+      <h2>${ic('inbox', 20)} ממתין לאישור</h2>
+      <p>נקלטו ${drafts.length} משימות. אשרי מה שרלוונטי — השאר יימחק.</p>
+    </div>
+    <div class="review-hero-actions">
+      <button class="btn btn-primary" id="rev-approve-all">${ic('check', 16)} לאשר הכל</button>
+      <button class="btn btn-danger" id="rev-reject-all">${ic('trash', 16)} לדחות הכל</button>
+    </div>
+  </div>
+
+  ${Object.entries(byProject).map(([pid, list]) => `
+    <div class="review-group">
+      <div class="review-group-head">
+        <span class="project-dot" style="background:${projColor(pid)}"></span>
+        <span class="rg-name">${esc(projName(pid))}</span>
+        <span class="count">${list.length}</span>
+        <button class="btn btn-ghost rg-btn" data-approve-group="${pid}">${ic('check', 14)} לאשר את הקבוצה</button>
+      </div>
+      <div class="task-list">
+        ${list.map(t => `
+          <div class="task-card review-card" data-draft="${t.id}">
+            <button class="rev-yes" data-approve="${t.id}" title="לאשר">${ic('check', 16)}</button>
+            <div class="task-body" data-edit="${t.id}">
+              <div class="task-title">${esc(t.title)}</div>
+              ${taskTags(t, { withProject: false }) ? `<div class="task-tags">${taskTags(t, { withProject: false })}</div>` : ''}
+            </div>
+            <button class="rev-no" data-reject="${t.id}" title="לא רלוונטי">${ic('x', 16)}</button>
+          </div>`).join('')}
+      </div>
+    </div>`).join('')}`;
+}
+
+async function approveDrafts(ids, silent = false) {
+  if (!ids.length) return;
+  ids.forEach(id => {
+    const t = DATA.tasks.find(x => x.id == id);
+    if (t) t.status = 'inbox';
+  });
+  saveCache();
+  render();
+  const ops = ids.map(id => ({ action: 'task_update', id, status: 'inbox' }));
+  try {
+    await api('ops', { ops });
+    if (!silent) toast(ids.length === 1 ? 'אושרה ונכנסה לרשימה' : `${ids.length} משימות נכנסו לרשימה`);
+  } catch (e) {
+    if (e.isNetwork) { queuePush('ops', { ops }); toast('נשמר במכשיר — יסונכרן כשתחזור הרשת'); }
+    else { toast('אופס — ' + e.message); await reload(); }
+  }
+}
+
+async function rejectDrafts(ids) {
+  if (!ids.length) return;
+  DATA.tasks = DATA.tasks.filter(x => !ids.includes(+x.id));
+  saveCache();
+  render();
+  const ops = ids.map(id => ({ action: 'task_delete', id }));
+  try {
+    await api('ops', { ops });
+    toast(ids.length === 1 ? 'נדחתה' : `${ids.length} נדחו`);
+  } catch (e) {
+    if (e.isNetwork) { queuePush('ops', { ops }); toast('נשמר במכשיר — יסונכרן כשתחזור הרשת'); }
+    else { toast('אופס — ' + e.message); await reload(); }
+  }
+}
+
+function bindReview() {
+  $$('[data-approve]').forEach(b => b.onclick = e => {
+    e.stopPropagation();
+    const card = b.closest('.review-card');
+    if (card) { confetti(30, b); card.classList.add('completing'); }
+    setTimeout(() => approveDrafts([+b.dataset.approve]), 260);
+  });
+  $$('[data-reject]').forEach(b => b.onclick = e => {
+    e.stopPropagation();
+    rejectDrafts([+b.dataset.reject]);
+  });
+  $$('[data-approve-group]').forEach(b => b.onclick = () => {
+    const pid = b.dataset.approveGroup;
+    const ids = draftTasks().filter(t => String(t.project_id || 0) === pid).map(t => t.id);
+    approveDrafts(ids);
+  });
+  const all = $('#rev-approve-all');
+  if (all) all.onclick = () => {
+    const ids = draftTasks().map(t => t.id);
+    confetti(140);
+    approveDrafts(ids);
+  };
+  const none = $('#rev-reject-all');
+  if (none) none.onclick = () => {
+    const ids = draftTasks().map(t => t.id);
+    openModal(`
+      <h3>${ic('trash', 20)} לדחות הכל?</h3>
+      <p style="color:var(--ink-soft)">${ids.length} משימות שממתינות לאישור יימחקו. אפשר לשחזר מההיסטוריה.</p>
+      <div class="sheet-actions">
+        <button class="btn btn-ghost" id="rr-cancel" style="flex:1">ביטול</button>
+        <button class="btn btn-danger" id="rr-go">כן, לדחות הכל</button>
+      </div>`);
+    $('#rr-cancel').onclick = closeModal;
+    $('#rr-go').onclick = () => { closeModal(); rejectDrafts(ids); };
   };
 }
 
