@@ -109,6 +109,7 @@ let OFFLINE = false;      // אין רשת — עובדים מהמטמון המ�
 let SHOW_FINISHED_TRAININGS = false;
 let OPEN_APPS = new Set();        // אילו כרטיסי אפליקציה פתוחים
 let SHOW_DONE_ITEMS = new Set();  // באילו אפליקציות מוצגים גם הפריטים שבוצעו
+let EXPANDED_PROMPTS = new Set(); // פרומפטים ארוכים שנפרשו במלואם
 let IDEAS_SEARCH = '';            // חיפוש חופשי ברעיונות ובפרומפטים
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -1118,9 +1119,12 @@ function itemRow(it) {
     <div class="item-main">
       <textarea class="item-title" data-field="title" data-id="${it.id}" rows="1" placeholder="${it.kind === 'prompt' ? 'שם הפרומפט...' : 'מה הרעיון?'}">${esc(it.title)}</textarea>
       ${it.kind === 'prompt' ? `
-        <div class="prompt-body">
+        <div class="prompt-body${EXPANDED_PROMPTS.has(it.id) ? ' expanded' : ''}">
           <textarea class="item-body" data-field="body" data-id="${it.id}" rows="2" placeholder="הפרומפט עצמו — יישמר כאן לשימוש חוזר">${esc(it.body)}</textarea>
-          <button class="icon-btn prompt-copy" data-copy-item="${it.id}" title="העתקת הפרומפט">${ic('copy', 15)}</button>
+          <div class="prompt-btns">
+            <button class="icon-btn prompt-copy" data-copy-item="${it.id}" title="העתקת הפרומפט">${ic('copy', 15)}</button>
+            ${(it.body || '').length > 300 ? `<button class="icon-btn prompt-copy" data-expand="${it.id}" title="${EXPANDED_PROMPTS.has(it.id) ? 'לכווץ' : 'להרחיב'}">${ic('chevronDown', 15)}</button>` : ''}
+          </div>
         </div>` : ''}
     </div>
     ${kindBtn}${del}
@@ -1365,6 +1369,12 @@ function bindIdeas() {
     const it = (DATA.app_items || []).find(x => x.id == b.dataset.copyItem);
     if (it) copyText(it.body || it.title);
   });
+  $$('[data-expand]').forEach(b => b.onclick = e => {
+    e.stopPropagation();
+    const id = +b.dataset.expand;
+    EXPANDED_PROMPTS.has(id) ? EXPANDED_PROMPTS.delete(id) : EXPANDED_PROMPTS.add(id);
+    render();
+  });
   $$('[data-goto-app]').forEach(el => el.onclick = e => {
     if (e.target.closest('[data-copy-item]')) return;
     OPEN_APPS.add(+el.dataset.gotoApp);
@@ -1373,8 +1383,14 @@ function bindIdeas() {
   });
 
   // עריכה חיה: כותרות וגופי פרומפט נשמרים ביציאה מהשדה, בלי רינדור מחדש (שלא לאבד פוקוס)
-  // ללא ריפוד נוסף — הגבול none ו-box-sizing:border-box, כך שגובה = scrollHeight מדויק
-  const grow = el => { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; };
+  // ללא ריפוד נוסף — הגבול none ו-box-sizing:border-box, כך שגובה = scrollHeight מדויק.
+  // גוף פרומפט מוגבל בגובה עד שפורשים אותו, אחרת פרומפט אחד תופס אלפי פיקסלים.
+  const grow = el => {
+    el.style.height = 'auto';
+    const box = el.closest('.prompt-body');
+    const cap = (box && !box.classList.contains('expanded')) ? 190 : Infinity;
+    el.style.height = Math.min(el.scrollHeight, cap) + 'px';
+  };
   $$('#main .item-title, #main .item-body').forEach(el => {
     grow(el);
     el.addEventListener('input', () => grow(el));

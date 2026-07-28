@@ -1020,9 +1020,13 @@ button.chip:hover { transform: translateY(-1px); border-color: var(--ink-soft); 
   padding: 4px 8px;
   margin: 1px 0 4px;
 }
-.prompt-body .item-body { font-size: .85rem; color: #7A4A12; }
+.prompt-body .item-body { font-size: .85rem; color: #7A4A12; overflow-y: auto; }
 .prompt-body .item-body:focus { background: rgba(255,255,255,.75); }
-.prompt-copy { width: 30px; height: 30px; flex-shrink: 0; box-shadow: none; background: rgba(255,255,255,.6); }
+.prompt-body.expanded .item-body { overflow-y: hidden; }
+.prompt-btns { display: flex; flex-direction: column; gap: 4px; flex-shrink: 0; }
+.prompt-copy { width: 28px; height: 28px; flex-shrink: 0; box-shadow: none; background: rgba(255,255,255,.6); }
+.prompt-body [data-expand] svg { transition: transform .2s; }
+.prompt-body.expanded [data-expand] svg { transform: rotate(180deg); }
 
 .item-kind {
   flex-shrink: 0;
