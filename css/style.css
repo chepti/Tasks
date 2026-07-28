@@ -1013,20 +1013,38 @@ button.chip:hover { transform: translateY(-1px); border-color: var(--ink-soft); 
 }
 .item-row:first-child .heading-title { margin-top: 0; }
 
-.prompt-body {
+/* גוף פריט — פירוט לרעיון או טקסט הפרומפט. מקוצר ל-3 שורות עם דהייה, ונפרש בלחיצה. */
+.body-box {
+  position: relative;
   display: flex; align-items: flex-start; gap: 6px;
-  background: var(--peach-soft);
+  background: var(--bg-soft);
   border-radius: 10px;
   padding: 4px 8px;
   margin: 1px 0 4px;
 }
-.prompt-body .item-body { font-size: .85rem; color: #7A4A12; overflow-y: auto; }
-.prompt-body .item-body:focus { background: rgba(255,255,255,.75); }
-.prompt-body.expanded .item-body { overflow-y: hidden; }
-.prompt-btns { display: flex; flex-direction: column; gap: 4px; flex-shrink: 0; }
-.prompt-copy { width: 28px; height: 28px; flex-shrink: 0; box-shadow: none; background: rgba(255,255,255,.6); }
-.prompt-body [data-expand] svg { transition: transform .2s; }
-.prompt-body.expanded [data-expand] svg { transform: rotate(180deg); }
+.body-box.is-prompt { background: var(--peach-soft); }
+.body-box .item-body { font-size: .85rem; overflow: hidden; }
+.body-box.is-prompt .item-body { color: #7A4A12; }
+.body-box .item-body:focus { background: rgba(255,255,255,.8); }
+
+/* דהייה בתחתית רק כשיש תוכן מוסתר */
+.body-box.clipped:not(.expanded)::after {
+  content: '';
+  position: absolute; inset-inline: 0; bottom: 0; height: 20px;
+  border-radius: 0 0 10px 10px;
+  background: linear-gradient(to top, var(--bg-soft), transparent);
+  pointer-events: none;
+}
+.body-box.is-prompt.clipped:not(.expanded)::after {
+  background: linear-gradient(to top, var(--peach-soft), transparent);
+}
+
+.body-btns { display: flex; flex-direction: column; gap: 4px; flex-shrink: 0; z-index: 1; }
+.body-btn { width: 28px; height: 28px; flex-shrink: 0; box-shadow: none; background: rgba(255,255,255,.65); }
+.body-box [data-expand] svg { transition: transform .2s; }
+.body-box.expanded [data-expand] svg { transform: rotate(180deg); }
+/* כשהכל נראה ממילא — אין צורך בכפתור פרישה */
+.body-box:not(.clipped):not(.expanded) [data-expand] { display: none; }
 
 .item-kind {
   flex-shrink: 0;

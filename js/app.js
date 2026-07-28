@@ -1118,12 +1118,12 @@ function itemRow(it) {
     <button class="item-check ${it.done == 1 ? 'checked' : ''}" data-toggle-item="${it.id}" title="בוצע">${ic('check', 13)}</button>
     <div class="item-main">
       <textarea class="item-title" data-field="title" data-id="${it.id}" rows="1" placeholder="${it.kind === 'prompt' ? 'שם הפרומפט...' : 'מה הרעיון?'}">${esc(it.title)}</textarea>
-      ${it.kind === 'prompt' ? `
-        <div class="prompt-body${EXPANDED_PROMPTS.has(it.id) ? ' expanded' : ''}">
-          <textarea class="item-body" data-field="body" data-id="${it.id}" rows="2" placeholder="הפרומפט עצמו — יישמר כאן לשימוש חוזר">${esc(it.body)}</textarea>
-          <div class="prompt-btns">
-            <button class="icon-btn prompt-copy" data-copy-item="${it.id}" title="העתקת הפרומפט">${ic('copy', 15)}</button>
-            ${(it.body || '').length > 300 ? `<button class="icon-btn prompt-copy" data-expand="${it.id}" title="${EXPANDED_PROMPTS.has(it.id) ? 'לכווץ' : 'להרחיב'}">${ic('chevronDown', 15)}</button>` : ''}
+      ${(it.kind === 'prompt' || (it.body || '').trim()) ? `
+        <div class="body-box${it.kind === 'prompt' ? ' is-prompt' : ''}${EXPANDED_PROMPTS.has(it.id) ? ' expanded' : ''}">
+          <textarea class="item-body" data-field="body" data-id="${it.id}" rows="2" placeholder="${it.kind === 'prompt' ? 'הפרומפט עצמו — יישמר כאן לשימוש חוזר' : 'פירוט...'}">${esc(it.body)}</textarea>
+          <div class="body-btns">
+            ${it.kind === 'prompt' ? `<button class="icon-btn body-btn" data-copy-item="${it.id}" title="העתקת הפרומפט">${ic('copy', 15)}</button>` : ''}
+            <button class="icon-btn body-btn" data-expand="${it.id}" title="${EXPANDED_PROMPTS.has(it.id) ? 'לכווץ' : 'לפתוח הכל'}">${ic('chevronDown', 15)}</button>
           </div>
         </div>` : ''}
     </div>
@@ -1384,12 +1384,20 @@ function bindIdeas() {
 
   // עריכה חיה: כותרות וגופי פרומפט נשמרים ביציאה מהשדה, בלי רינדור מחדש (שלא לאבד פוקוס)
   // ללא ריפוד נוסף — הגבול none ו-box-sizing:border-box, כך שגובה = scrollHeight מדויק.
-  // גוף פרומפט מוגבל בגובה עד שפורשים אותו, אחרת פרומפט אחד תופס אלפי פיקסלים.
+  // גוף (פרומפט או פירוט) מקוצר ל-3 שורות עד שפורשים אותו — אחרת שורה אחת תופסת אלפי פיקסלים.
+  const PREVIEW_LINES = 3;
   const grow = el => {
     el.style.height = 'auto';
-    const box = el.closest('.prompt-body');
-    const cap = (box && !box.classList.contains('expanded')) ? 190 : Infinity;
+    const box = el.closest('.body-box');
+    let cap = Infinity;
+    if (box && !box.classList.contains('expanded')) {
+      const cs = getComputedStyle(el);
+      const lh = parseFloat(cs.lineHeight) || 19;
+      cap = lh * PREVIEW_LINES + parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
+    }
     el.style.height = Math.min(el.scrollHeight, cap) + 'px';
+    // סימון שיש עוד תוכן מוסתר — כדי להציג דהייה בתחתית ולהראות שכדאי לפתוח
+    if (box) box.classList.toggle('clipped', el.scrollHeight > cap + 1);
   };
   $$('#main .item-title, #main .item-body').forEach(el => {
     grow(el);
