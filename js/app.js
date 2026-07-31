@@ -110,6 +110,7 @@ let SHOW_FINISHED_TRAININGS = false;
 let OPEN_APPS = new Set();        // אילו כרטיסי אפליקציה פתוחים
 let SHOW_DONE_ITEMS = new Set();  // באילו אפליקציות מוצגים גם הפריטים שבוצעו
 let EXPANDED_PROMPTS = new Set(); // פרומפטים ארוכים שנפרשו במלואם
+let SHOW_DONE_APPS = false;       // האם להציג את האפליקציות שהושלמו
 let IDEAS_SEARCH = '';            // חיפוש חופשי ברעיונות ובפרומפטים
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -579,11 +580,31 @@ function nextUpcomingTraining() {
     .sort((a, b) => a.date.localeCompare(b.date))[0] || null;
 }
 
-const FU_ITEMS = [
-  ['fu_recording', 'לשלוח הקלטה', 'send'],
-  ['fu_whatsapp',  'קבוצת וצאפ מלווה', 'messageCircle'],
-  ['fu_takeaways', 'עם מה יוצאים מהמפגש', 'gift'],
-];
+/* פעולות משלימות: רשימה גמישה לכל הדרכה (JSON בשדה followups). שלושת השדות
+   הישנים fu_* משמשים רק כנפילה לרשומות שנשמרו לפני השינוי. */
+const FU_DEFAULTS = ['לשלוח הקלטה', 'קבוצת וואטסאפ מלווה', 'עם מה יוצאים מהמפגש'];
+const FU_LEGACY_COLS = ['fu_recording', 'fu_whatsapp', 'fu_takeaways'];
+
+function fuIcon(label) {
+  const s = String(label);
+  if (/הקלט|סרטון|וידאו/.test(s)) return 'mic';
+  if (/וואטסאפ|וצאפ|ווצאפ|קבוצ/.test(s)) return 'messageCircle';
+  if (/מייל|מיל|לשלוח/.test(s)) return 'send';
+  if (/תשלום|חשבונית|כספ/.test(s)) return 'banknote';
+  if (/מצגת|חומר/.test(s)) return 'monitor';
+  return 'gift';
+}
+
+function fuList(t) {
+  if (t && t.followups) {
+    try {
+      const l = JSON.parse(t.followups);
+      if (Array.isArray(l)) return l.filter(f => f && String(f.label || '').trim());
+    } catch (e) { /* JSON פגום — ניפול לברירת המחדל */ }
+  }
+  return FU_DEFAULTS.map((label, i) => ({ label, done: (t && t[FU_LEGACY_COLS[i]] == 1) ? 1 : 0 }));
+}
+const fuEncode = list => JSON.stringify(list.filter(f => String(f.label || '').trim()));
 
 const TMODE = {
   physical: { label: 'פיזי',     icon: 'mapPin',  color: 'sky' },
@@ -652,9 +673,9 @@ function trainingCard(t, { finished = false } = {}) {
           ${ic(t.pay_received == 1 ? 'check' : 'banknote', 14)}
           ${t.pay_received == 1 ? 'התשלום התקבל' : 'ממתין לתשלום'}${t.pay_amount ? ` · ${esc(t.pay_amount)}` : ''}
         </button>
-        ${FU_ITEMS.map(([k, label, icon]) => `
-          <button class="pill-toggle small ${t[k] == 1 ? 'on' : ''}" data-fu="${k}" data-tid="${t.id}" title="${label}">
-            ${ic(icon, 13)}<span class="fu-label">${label}</span>
+        ${fuList(t).map((f, i) => `
+          <button class="pill-toggle small ${f.done == 1 ? 'on' : ''}" data-fu="${i}" data-tid="${t.id}" title="${esc(f.label)}">
+            ${ic(fuIcon(f.label), 13)}<span class="fu-label">${esc(f.label)}</span>
           </button>`).join('')}
       </div>` : ''}
   </div>`;
@@ -853,9 +874,10 @@ function openTrainingSheet(id) {
           ${urlCell('recording_url', 'הקלטה', 'mic')}
 
           ${divider('check', 'פעולות משלימות')}
-          <div class="pill-row">
-            ${FU_ITEMS.map(([k, label, icon]) => `
-              <button type="button" class="pill-toggle ${t[k] == 1 ? 'on' : ''}" data-ttoggle="${k}">${ic(icon, 13)} ${label}</button>`).join('')}
+          <div id="ts-fu-list" class="fu-edit-list"></div>
+          <div class="fu-add">
+            <input type="text" id="ts-fu-new" placeholder="להוסיף פעולה... (Enter)">
+            <button type="button" class="icon-btn" id="ts-fu-add" title="הוספה">${ic('plus', 16)}</button>
           </div>
         </div>
       </div>
@@ -908,12 +930,49 @@ function openTrainingSheet(id) {
     $$('#task-sheet [data-tmode]').forEach(x => x.classList.toggle('on', x.dataset.tmode === t.mode));
   });
 
-  // סימוני on/off (תשלום התקבל + פעולות משלימות) — נשמרים על t
+  // סימוני on/off (תשלום התקבל) — נשמרים על t
   $$('#task-sheet [data-ttoggle]').forEach(b => b.onclick = () => {
     const f = b.dataset.ttoggle;
     t[f] = t[f] == 1 ? 0 : 1;
     b.classList.toggle('on', t[f] == 1);
   });
+
+  // רשימת הפעולות המשלימות — ניתנת לעריכה, הסרה והוספה לכל הדרכה בנפרד
+  let fu = fuList(t);
+  const renderFu = () => {
+    $('#ts-fu-list').innerHTML = fu.length ? fu.map((f, i) => `
+      <div class="fu-edit-row">
+        <button type="button" class="item-check ${f.done == 1 ? 'checked' : ''}" data-fudone="${i}" title="בוצע">${ic('check', 11)}</button>
+        ${ic(fuIcon(f.label), 15)}
+        <input type="text" class="fu-label-input" data-fulabel="${i}" value="${esc(f.label)}">
+        <button type="button" class="item-del" data-furemove="${i}" title="להסיר">${ic('x', 15)}</button>
+      </div>`).join('') : '<div class="fu-empty">אין פעולות משלימות להדרכה הזו</div>';
+
+    $$('#ts-fu-list [data-fudone]').forEach(b => b.onclick = () => {
+      const i = +b.dataset.fudone;
+      fu[i].done = fu[i].done == 1 ? 0 : 1;
+      renderFu();
+    });
+    $$('#ts-fu-list [data-furemove]').forEach(b => b.onclick = () => {
+      fu.splice(+b.dataset.furemove, 1);
+      renderFu();
+    });
+    $$('#ts-fu-list [data-fulabel]').forEach(inp => inp.oninput = () => {
+      fu[+inp.dataset.fulabel].label = inp.value;
+    });
+  };
+  renderFu();
+
+  const addFu = () => {
+    const v = $('#ts-fu-new').value.trim();
+    if (!v) return;
+    fu.push({ label: v, done: 0 });
+    $('#ts-fu-new').value = '';
+    renderFu();
+    $('#ts-fu-new').focus();
+  };
+  $('#ts-fu-add').onclick = addFu;
+  $('#ts-fu-new').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); addFu(); } };
 
   $('#ts-cancel').onclick = closeSheet;
   $('#sheet-backdrop').onclick = closeSheet;
@@ -924,7 +983,7 @@ function openTrainingSheet(id) {
      'slides_url','recording_url','notes'].forEach(f => payload[f] = $('#ts-' + f).value.trim());
     payload.mode = t.mode || '';
     payload.pay_received = t.pay_received == 1 ? 1 : 0;
-    FU_ITEMS.forEach(([k]) => payload[k] = t[k] == 1 ? 1 : 0);
+    payload.followups = fuEncode(fu);
     closeSheet();
     await saveTraining(payload);
   };
@@ -1202,7 +1261,8 @@ function renderIdeasSearch(q) {
 }
 
 function renderIdeas() {
-  const apps = appsList().filter(a => a.status !== 'archived');
+  const live = appsList().filter(a => !['archived', 'done'].includes(a.status));
+  const finished = appsList().filter(a => a.status === 'done');
   const top = `
     <div class="ideas-top">
       <div class="ideas-search">
@@ -1215,9 +1275,15 @@ function renderIdeas() {
 
   if (IDEAS_SEARCH.trim()) return top + renderIdeasSearch(IDEAS_SEARCH.trim());
 
-  return top + (apps.length
-    ? `<div class="apps-grid">${apps.map(appCard).join('')}</div>`
-    : `<div class="empty-state">${ic('lightbulb', 44)}<p>עוד אין רעיונות לאפליקציות</p><p class="sub">כל אפליקציה מקבלת מקום משלה לרעיונות, פיצ'רים ופרומפטים</p></div>`);
+  return top + (live.length
+    ? `<div class="apps-grid">${live.map(appCard).join('')}</div>`
+    : `<div class="empty-state">${ic('lightbulb', 44)}<p>עוד אין רעיונות לאפליקציות</p><p class="sub">כל אפליקציה מקבלת מקום משלה לרעיונות, פיצ'רים ופרומפטים</p></div>`)
+  + (finished.length ? `
+    <button class="done-toggle" id="toggle-done-apps" style="margin:22px 4px 10px">
+      ${ic('chevronDown', 15)} אפליקציות שהושלמו <span class="count">${finished.length}</span>
+    </button>
+    ${SHOW_DONE_APPS ? `<div class="apps-grid done-apps">${finished.map(appCard).join('')}</div>` : ''}
+  ` : '');
 }
 
 /* ---------- פעולות על רעיונות ---------- */
@@ -1360,6 +1426,8 @@ function bindIdeas() {
     SHOW_DONE_ITEMS.has(id) ? SHOW_DONE_ITEMS.delete(id) : SHOW_DONE_ITEMS.add(id);
     render();
   });
+  const tda = $('#toggle-done-apps');
+  if (tda) tda.onclick = () => { SHOW_DONE_APPS = !SHOW_DONE_APPS; render(); };
 
   $$('[data-toggle-item]').forEach(b => b.onclick = () => toggleItemDone(+b.dataset.toggleItem));
   $$('[data-cycle-kind]').forEach(b => b.onclick = () => cycleItemKind(+b.dataset.cycleKind));
@@ -1436,13 +1504,25 @@ function openAppModal(id) {
         <button class="chip" data-color="${c}" style="background:${c};width:38px;height:38px;padding:0;${a.color === c ? 'outline:3px solid var(--ink);outline-offset:2px' : ''}"></button>`).join('')}
       </div>
     </div>
+    <div class="field">
+      <div class="field-label">${ic('listTodo', 13)} מצב</div>
+      <div class="chips">
+        <button class="chip c-teal ${a.status === 'active' ? 'on' : ''}" data-astatus="active">${ic('zap', 14)}פעיל</button>
+        <button class="chip c-lilac ${a.status === 'someday' ? 'on' : ''}" data-astatus="someday">${ic('cloudSun', 14)}מתישהו</button>
+        <button class="chip c-sky ${a.status === 'done' ? 'on' : ''}" data-astatus="done">${ic('check', 14)}בוצע</button>
+      </div>
+    </div>
     <div class="sheet-actions">
       ${id ? `<button class="btn btn-danger" id="app-del" title="מחיקה">${ic('trash', 17)}</button>` : ''}
       <button class="btn btn-ghost" id="app-cancel">ביטול</button>
       <button class="btn btn-primary" id="app-save">${id ? 'שמירה' : 'יצירה'}</button>
     </div>`);
 
-  let color = a.color;
+  let color = a.color, status = a.status || 'active';
+  $$('#modal [data-astatus]').forEach(b => b.onclick = () => {
+    status = b.dataset.astatus;
+    $$('#modal [data-astatus]').forEach(x => x.classList.toggle('on', x.dataset.astatus === status));
+  });
   $$('#modal [data-color]').forEach(b => b.onclick = () => {
     color = b.dataset.color;
     $$('#modal [data-color]').forEach(x => x.style.outline = x.dataset.color === color ? '3px solid var(--ink)' : 'none');
@@ -1451,7 +1531,7 @@ function openAppModal(id) {
   $('#app-save').onclick = async () => {
     const name = $('#app-name').value.trim();
     if (!name) { $('#app-name').focus(); return; }
-    const payload = { name, notes: $('#app-notes').value.trim(), color };
+    const payload = { name, notes: $('#app-notes').value.trim(), color, status };
     if (id) payload.id = id;
     closeModal();
     const res = await apiQueued('app_upsert', payload, id ? 'עודכן' : 'נוצרה אפליקציה חדשה!');
@@ -1606,7 +1686,11 @@ function bindMain() {
   $$('[data-fu]').forEach(b => b.onclick = e => {
     e.stopPropagation();
     const t = trainingsList().find(x => x.id == b.dataset.tid);
-    saveTraining({ ...trainingRef(t), [b.dataset.fu]: t[b.dataset.fu] == 1 ? 0 : 1 }, { quiet: true });
+    const list = fuList(t);
+    const i = +b.dataset.fu;
+    if (!list[i]) return;
+    list[i].done = list[i].done == 1 ? 0 : 1;
+    saveTraining({ ...trainingRef(t), followups: fuEncode(list) }, { quiet: true });
   });
   const nt = $('#btn-new-training');
   if (nt) nt.onclick = () => openTrainingSheet(null);

@@ -41,7 +41,7 @@ const TRAINING_FIELDS = ['client_id','topic','place','mode','date','time_from','
     'contact_name','contact_phone','contact_email','contact_role',
     'pay_amount','pay_process','pay_received',
     'people_count','audience','style','ideas','tools','equipment','structure','message',
-    'slides_url','recording_url','fu_recording','fu_whatsapp','fu_takeaways','notes'];
+    'slides_url','recording_url','fu_recording','fu_whatsapp','fu_takeaways','followups','notes'];
 
 const ENUMS = [
     'status'  => ['draft','inbox','next','waiting','someday','done','dropped'],
@@ -113,7 +113,8 @@ function helpDoc() {
             'people_count' => 'expected attendance', 'audience' => 'audience traits, prior knowledge, what they already covered',
             'style' => 'workshop / inspiration / lecture...', 'ideas' => 'session ideas', 'tools' => 'tools to teach',
             'equipment' => 'equipment teachers need', 'structure' => 'requested structure', 'message' => 'requested core message',
-            'slides_url / recording_url' => 'links', 'fu_recording / fu_whatsapp / fu_takeaways' => '0/1 follow-up checklist',
+            'slides_url / recording_url' => 'links',
+            'followups' => 'JSON array [{"label":"...","done":0|1}] — the per-training follow-up checklist. Items can be removed or added freely (a physical session has no recording to send). Legacy fu_recording/fu_whatsapp/fu_takeaways are only a fallback for rows written before this field.',
             'notes' => 'free text', 'client_id' => 'optional client-generated id for idempotent offline sync',
         ],
         'targeting_a_task' => 'For update/complete/reopen/delete pass {"id":N} OR {"match":"substring of the title"}. If "match" is ambiguous you get HTTP 409 with a candidates list — refine or use the id.',
@@ -322,6 +323,9 @@ foreach ([
     'mode' => "TEXT DEFAULT ''",
     'gcal_event_id' => "TEXT DEFAULT ''",   // linked Google Calendar event, once synced
     'gcal_updated' => "TEXT DEFAULT ''",    // event's Google 'updated' timestamp we last saw (conflict check)
+    // per-training follow-up checklist as JSON [{label, done}] — replaces the three fixed
+    // fu_* flags, which stay for historical rows and are used as a fallback when empty
+    'followups' => "TEXT DEFAULT ''",
 ] as $col => $decl) {
     try { $db->exec("ALTER TABLE trainings ADD COLUMN $col $decl"); } catch (Throwable $e) { /* exists */ }
 }
@@ -553,6 +557,30 @@ const GCAL_SECTIONS = [
     'notes'        => 'הערות',
 ];
 
+const FU_LEGACY = [
+    'fu_recording' => 'לשלוח הקלטה',
+    'fu_whatsapp'  => 'קבוצת וואטסאפ מלווה',
+    'fu_takeaways' => 'עם מה יוצאים מהמפגש',
+];
+
+/** Follow-up checklist of a training: the JSON list, or the three legacy flags if it's empty. */
+function fuList($t) {
+    $raw = $t['followups'] ?? '';
+    if ($raw !== '') {
+        $list = json_decode($raw, true);
+        if (is_array($list)) {
+            return array_values(array_filter($list, function ($f) {
+                return is_array($f) && trim($f['label'] ?? '') !== '';
+            }));
+        }
+    }
+    $out = [];
+    foreach (FU_LEGACY as $col => $label) {
+        $out[] = ['label' => $label, 'done' => (int)($t[$col] ?? 0)];
+    }
+    return $out;
+}
+
 /** Builds the Calendar event body from a training row. */
 function gcalBuildEvent($t) {
     $modeLabel = TMODE_LABELS[$t['mode']] ?? '';
@@ -573,12 +601,11 @@ function gcalBuildEvent($t) {
     foreach (['audience','ideas','tools','message','structure','equipment','slides_url','recording_url'] as $f) {
         if (!empty($t[$f])) $lines[] = '[' . GCAL_SECTIONS[$f] . "]\n" . $t[$f];
     }
-    $fu = array_filter([
-        $t['fu_recording'] == 1 ? 'הקלטה' : null,
-        $t['fu_whatsapp'] == 1 ? 'וואטסאפ' : null,
-        $t['fu_takeaways'] == 1 ? 'תובנות' : null,
-    ]);
-    if ($fu) $lines[] = '[' . GCAL_SECTIONS['followups'] . '] ' . implode(', ', $fu);
+    $fu = array_map(
+        function ($f) { return ($f['done'] ? '[v] ' : '[ ] ') . $f['label']; },
+        fuList($t)
+    );
+    if ($fu) $lines[] = '[' . GCAL_SECTIONS['followups'] . '] ' . implode(' | ', $fu);
     if ($t['notes']) $lines[] = '[' . GCAL_SECTIONS['notes'] . "]\n" . $t['notes'];
     $lines[] = '';
     $lines[] = 'TASKS-ID: ' . $t['id'];
@@ -652,9 +679,18 @@ function gcalParseEvent($event) {
         } elseif ($f === 'audience_num') {
             $fields['people_count'] = $val;
         } elseif ($f === 'followups') {
-            $fields['fu_recording'] = (mb_strpos($val, 'הקלטה') !== false) ? 1 : 0;
-            $fields['fu_whatsapp'] = (mb_strpos($val, 'וואטסאפ') !== false) ? 1 : 0;
-            $fields['fu_takeaways'] = (mb_strpos($val, 'תובנות') !== false) ? 1 : 0;
+            $list = [];
+            foreach (explode('|', $val) as $part) {
+                $part = trim($part);
+                if ($part === '') continue;
+                $done = 0;
+                if (preg_match('/^\[\s*([vVxX✓])?\s*\]\s*(.*)$/u', $part, $mm)) {
+                    $done = ($mm[1] ?? '') !== '' ? 1 : 0;
+                    $part = trim($mm[2]);
+                }
+                if ($part !== '') $list[] = ['label' => $part, 'done' => $done];
+            }
+            if ($list) $fields['followups'] = json_encode($list, JSON_UNESCAPED_UNICODE);
         } elseif ($f) {
             $fields[$f] = $val;
         }
