@@ -1941,12 +1941,192 @@ function closeSheet() {
   EDITING = null;
 }
 
+/* ============ חיפוש גלובלי ============ */
+/* עובר על כל סוגי התוכן. "חכם" במובן שהוא סבלני: מתעלם מניקוד, מגרשיים ומפיסוק,
+   מזהה אותיות סופיות (ם/ן/ץ/ף/ך) כרגילות, ומאפשר כמה מילים בכל סדר. */
+
+const FINALS = { 'ף': 'פ', 'ך': 'כ', 'ם': 'מ', 'ן': 'נ', 'ץ': 'צ' };
+
+function norm(s) {
+  return String(s == null ? '' : s)
+    .toLowerCase()
+    .replace(/[֑-ׇ]/g, '')                  // ניקוד וטעמים
+    .replace(/[״”“"'׳’`]/g, '')                        // גרשיים למיניהם
+    .replace(/[ףךםןץ]/g, c => FINALS[c])              // אותיות סופיות
+    .replace(/[^0-9a-zא-ת]+/g, ' ')
+    .trim();
+}
+
+function snippet(text, terms, len = 120) {
+  const s = String(text || '').replace(/\s+/g, ' ').trim();
+  const low = s.toLowerCase();
+  let pos = -1;
+  for (const t of terms) {
+    const p = low.indexOf(t);
+    if (p >= 0 && (pos < 0 || p < pos)) pos = p;
+  }
+  if (s.length <= len) return s;
+  if (pos < 0) return s.slice(0, len) + '…';
+  const start = Math.max(0, pos - 40);
+  return (start > 0 ? '…' : '') + s.slice(start, start + len) + (start + len < s.length ? '…' : '');
+}
+
+const SEARCH_TYPES = {
+  task:     { label: 'משימה',   icon: 'listTodo',     color: 'coral' },
+  project:  { label: 'פרויקט',  icon: 'folder',       color: 'teal' },
+  training: { label: 'הדרכה',   icon: 'presentation', color: 'lilac' },
+  app:      { label: 'אפליקציה', icon: 'lightbulb',   color: 'peach' },
+  item:     { label: 'רעיון',   icon: 'sparkles',     color: 'sky' },
+  prompt:   { label: 'פרומפט',  icon: 'messageSquare', color: 'rose' },
+};
+
+function searchAll(q) {
+  const terms = norm(q).split(/\s+/).filter(Boolean);
+  if (!terms.length) return [];
+  const results = [];
+
+  // fields: [text, weight] — כותרת מקבלת משקל גבוה מגוף
+  const add = (type, id, title, subtitle, fields, badge) => {
+    const parts = fields.map(f => norm(f[0]));
+    const hay = parts.join(' | ');
+    if (!terms.every(t => hay.includes(t))) return;
+    let score = 0;
+    terms.forEach(t => {
+      fields.forEach((f, i) => { if (parts[i].includes(t)) score += f[1]; });
+      if (parts[0].split(' ').some(w => w === t)) score += 6;   // התאמת מילה שלמה בכותרת
+      if (parts[0].startsWith(t)) score += 4;
+    });
+    const bodyText = fields.slice(1).map(f => f[0]).filter(Boolean).join(' · ');
+    results.push({ type, id, title, subtitle, badge, score, snippet: bodyText ? snippet(bodyText, terms) : '' });
+  };
+
+  const projName = pid => (DATA.projects.find(p => p.id == pid) || {}).name || '';
+
+  DATA.tasks.forEach(t => {
+    const st = STATUS[t.status] || {};
+    add('task', t.id, t.title, [projName(t.project_id), st.label].filter(Boolean).join(' · '),
+        [[t.title, 10], [t.notes, 3]],
+        t.status === 'done' ? 'בוצע' : t.status === 'draft' ? 'ממתין לאישור' : '');
+  });
+
+  DATA.projects.forEach(p => add('project', p.id, p.name, '', [[p.name, 10], [p.notes, 3]]));
+
+  (DATA.trainings || []).forEach(t => {
+    add('training', t.id, t.topic || t.place || 'הדרכה',
+        [t.place, t.date ? trainingDateLabel(t) : ''].filter(Boolean).join(' · '),
+        [[t.topic, 10], [t.place, 6], [t.contact_name, 5], [t.contact_role, 3], [t.contact_phone, 3], [t.contact_email, 3],
+         [t.audience, 3], [t.ideas, 3], [t.tools, 3], [t.message, 3], [t.structure, 3], [t.equipment, 3],
+         [t.style, 3], [t.pay_process, 2], [t.pay_amount, 2], [t.notes, 3], [t.followups, 2]],
+        t.date && t.date < todayStr() ? 'הסתיימה' : '');
+  });
+
+  (DATA.apps || []).forEach(a =>
+    add('app', a.id, a.name, '', [[a.name, 10], [a.notes, 3]], a.status === 'done' ? 'הושלמה' : ''));
+
+  (DATA.app_items || []).forEach(it => {
+    const appName = ((DATA.apps || []).find(a => a.id == it.app_id) || {}).name || '';
+    add(it.kind === 'prompt' ? 'prompt' : 'item', it.id, it.title || '(בלי כותרת)',
+        appName, [[it.title, 10], [it.body, 4]], it.done == 1 ? 'בוצע' : '');
+  });
+
+  return results.sort((a, b) => b.score - a.score);
+}
+
+let SEARCH_Q = '';
+
+function renderSearchResults() {
+  const box = $('#gs-results');
+  if (!box) return;
+  const q = SEARCH_Q.trim();
+  if (!q) {
+    box.innerHTML = `<div class="gs-hint">${ic('search', 34)}<p>אפשר לחפש בכל מה שיש — משימות, פרויקטים, הדרכות, רעיונות ופרומפטים</p></div>`;
+    return;
+  }
+  const res = searchAll(q);
+  $('#gs-count').textContent = res.length ? res.length : '';
+  if (!res.length) {
+    box.innerHTML = `<div class="gs-hint">${ic('coffee', 34)}<p>אין תוצאות ל"${esc(q)}"</p></div>`;
+    return;
+  }
+  box.innerHTML = res.slice(0, 60).map(r => {
+    const ty = SEARCH_TYPES[r.type];
+    return `
+    <button class="gs-row" data-goto="${r.type}:${r.id}">
+      <span class="tag t-${ty.color} gs-type">${ic(ty.icon, 11)}${ty.label}</span>
+      <span class="gs-main">
+        <span class="gs-title">${esc(r.title)}</span>
+        ${r.snippet ? `<span class="gs-snip">${esc(r.snippet)}</span>` : ''}
+      </span>
+      ${r.subtitle ? `<span class="gs-sub">${esc(r.subtitle)}</span>` : ''}
+      ${r.badge ? `<span class="tag t-gray">${esc(r.badge)}</span>` : ''}
+    </button>`;
+  }).join('') + (res.length > 60 ? `<div class="gs-hint" style="padding:12px"><p class="sub">מוצגות 60 מתוך ${res.length} — אפשר לצמצם את החיפוש</p></div>` : '');
+
+  $$('#gs-results [data-goto]').forEach(b => b.onclick = () => {
+    const [type, id] = b.dataset.goto.split(':');
+    gotoResult(type, +id);
+  });
+}
+
+function gotoResult(type, id) {
+  closeModal();
+  if (type === 'task') { openTaskSheet(id); return; }
+  if (type === 'training') { VIEW = 'trainings'; render(); openTrainingSheet(id); return; }
+  if (type === 'project') {
+    VIEW = 'projects'; OPEN_PROJECTS.add(id); render();
+    setTimeout(() => $(`[data-project-card="${id}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 60);
+    return;
+  }
+  if (type === 'app') {
+    VIEW = 'ideas'; IDEAS_SEARCH = ''; OPEN_APPS.add(id);
+    if ((DATA.apps.find(a => a.id == id) || {}).status === 'done') SHOW_DONE_APPS = true;
+    render();
+    return;
+  }
+  // רעיון או פרומפט — לפתוח את המיכל שלו ולגלול אליו
+  const it = (DATA.app_items || []).find(x => x.id == id);
+  if (!it) return;
+  VIEW = 'ideas'; IDEAS_SEARCH = ''; OPEN_APPS.add(+it.app_id);
+  if (it.done == 1) SHOW_DONE_ITEMS.add(+it.app_id);
+  if (it.kind === 'prompt') EXPANDED_PROMPTS.add(it.id);
+  render();
+  setTimeout(() => {
+    const row = $(`[data-row="${id}"]`);
+    if (row) { row.scrollIntoView({ behavior: 'smooth', block: 'center' }); row.classList.add('gs-flash'); }
+  }, 60);
+}
+
+function openSearchModal() {
+  SEARCH_Q = '';
+  openModal(`
+    <div class="gs-head">
+      ${ic('search', 20)}
+      <input type="text" id="gs-input" placeholder="לחפש בכל המערכת..." autocomplete="off">
+      <span class="count" id="gs-count"></span>
+      <button class="corner-btn" id="gs-close" title="סגירה">${ic('x', 18)}</button>
+    </div>
+    <div id="gs-results" class="gs-results"></div>`);
+  $('#modal').classList.add('modal-search');
+  renderSearchResults();
+  const inp = $('#gs-input');
+  inp.focus();
+  inp.oninput = () => { SEARCH_Q = inp.value; renderSearchResults(); };
+  inp.onkeydown = e => {
+    if (e.key === 'Enter') { const first = $('#gs-results [data-goto]'); if (first) first.click(); }
+  };
+  $('#gs-close').onclick = closeModal;
+  $('#modal-backdrop').onclick = e => { if (e.target === $('#modal-backdrop')) closeModal(); };
+}
+
 /* ---------- מודאלים ---------- */
 function openModal(html) {
   $('#modal').innerHTML = html;
   $('#modal-backdrop').classList.remove('hidden');
 }
-function closeModal() { $('#modal-backdrop').classList.add('hidden'); }
+function closeModal() {
+  $('#modal-backdrop').classList.add('hidden');
+  $('#modal').classList.remove('modal-search');
+}
 
 function openPasteModal() {
   openModal(`
@@ -2295,6 +2475,8 @@ $('#login-form').onsubmit = async e => {
 
 $('#fab').onclick = () => openTaskSheet(null);
 $('#fab').innerHTML = ic('plus', 26);
+$('#btn-search').innerHTML = ic('search', 19);
+$('#btn-search').onclick = openSearchModal;
 $('#btn-history').innerHTML = ic('history', 19);
 $('#btn-history').onclick = openHistoryModal;
 $('#btn-settings').innerHTML = ic('settings', 19);
@@ -2302,6 +2484,13 @@ $('#btn-settings').onclick = openSettingsModal;
 
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') { closeSheet(); closeModal(); closeDeferPop(); }
+  // Ctrl/Cmd+K או "/" פותחים חיפוש — אבל לא בזמן הקלדה בשדה
+  const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName || '');
+  if (((e.key === 'k' || e.key === 'K') && (e.ctrlKey || e.metaKey)) || (e.key === '/' && !typing)) {
+    if ($('#app').classList.contains('hidden')) return;
+    e.preventDefault();
+    openSearchModal();
+  }
 });
 
 (async function init() {

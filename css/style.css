@@ -837,6 +837,75 @@ button.chip:hover { transform: translateY(-1px); border-color: var(--ink-soft); 
   .t-bottom { margin-top: 8px; }
 }
 
+/* ============ חיפוש גלובלי ============ */
+
+.modal.modal-search {
+  max-width: 720px;
+  padding: 16px 18px 10px;
+  max-height: 88dvh;
+  display: flex; flex-direction: column;
+}
+.gs-head {
+  display: flex; align-items: center; gap: 10px;
+  padding-bottom: 12px;
+  border-bottom: 2px solid var(--bg-soft);
+  flex-shrink: 0;
+}
+.gs-head > svg { color: var(--coral); flex-shrink: 0; }
+.gs-head input {
+  flex: 1; min-width: 0;
+  border: none; background: transparent; box-shadow: none;
+  padding: 6px 0; font-size: 1.05rem;
+}
+.gs-head input:focus { background: transparent; border-color: transparent; }
+.gs-head .count {
+  background: var(--bg-soft); color: var(--ink-soft);
+  border-radius: var(--r-pill); padding: 2px 10px; font-size: .78rem; font-weight: 600;
+}
+.gs-head .count:empty { display: none; }
+
+.gs-results { overflow-y: auto; margin-top: 6px; flex: 1; }
+
+.gs-row {
+  display: flex; align-items: center; gap: 9px;
+  width: 100%;
+  text-align: right;
+  padding: 9px 8px;
+  border-radius: 14px;
+  transition: background .12s;
+}
+.gs-row:hover { background: var(--bg-soft); }
+.gs-type { flex-shrink: 0; }
+.gs-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.gs-title {
+  font-size: .95rem; font-weight: 600; color: var(--ink);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.gs-snip {
+  font-size: .78rem; color: var(--ink-soft);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.gs-sub {
+  font-size: .76rem; color: var(--ink-faint);
+  flex-shrink: 0; white-space: nowrap;
+  max-width: 30%; overflow: hidden; text-overflow: ellipsis;
+}
+@media (max-width: 620px) {
+  .gs-sub { display: none; }
+  .gs-type span { display: none; }
+}
+
+.gs-hint { text-align: center; padding: 34px 20px; color: var(--ink-soft); }
+.gs-hint svg { margin: 0 auto 12px; color: var(--ink-faint); }
+.gs-hint p { font-size: .92rem; }
+
+/* הבזק קצר על השורה שהגענו אליה מהחיפוש */
+@keyframes gs-flash-anim {
+  0%, 100% { background: transparent; }
+  25%, 60% { background: var(--peach-soft); }
+}
+.gs-flash { animation: gs-flash-anim 1.6s ease; }
+
 /* ============ מסך אישור קליטה ============ */
 
 .nav-badge {

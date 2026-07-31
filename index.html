@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Varela+Round&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=13">
+<link rel="stylesheet" href="css/style.css?v=14">
 </head>
 <body>
 
@@ -42,6 +42,7 @@
     </div>
     <nav class="topnav" id="topnav"></nav>
     <div class="topbar-actions">
+      <button class="icon-btn" id="btn-search" title="חיפוש בכל המערכת"></button>
       <button class="icon-btn" id="btn-history" title="היסטוריה"></button>
       <button class="icon-btn" id="btn-settings" title="הגדרות"></button>
     </div>
@@ -66,7 +67,7 @@
 <div id="toast" class="toast hidden"></div>
 <canvas id="confetti-canvas"></canvas>
 
-<script src="js/app.js?v=13"></script>
+<script src="js/app.js?v=14"></script>
 <script>
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js').catch(function(){});
