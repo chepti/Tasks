@@ -139,6 +139,7 @@ function helpDoc() {
             'item_delete'    => 'POST — { id }.',
             'items_reorder'  => 'POST — { ids:[...] } sets sort_order by array position (drag & drop).',
             'ops'            => 'POST — { ops:[ {action, ...}, ... ] } run in order; returns per-op ok/error. One round-trip for many changes.',
+            'completed'      => 'GET  — tasks that were finished, bucketed into Friday..Thursday weeks (Asia/Jerusalem). Params: weeks=N (default 4, max 26) | week=N (0=this week, 1=last week) | from=YYYY-MM-DD&to=YYYY-MM-DD | project=<name substring> | flat=1 for one plain list | limit=N. Each week returns count, by_project breakdown and the task list with day names. Use this to report what got done.',
             'history'        => 'GET  — ?limit=100 recent changes with before-snapshots.',
             'restore'        => 'POST — { history_id } revert an item to that snapshot.',
             'export'         => 'GET  — full backup JSON.',
@@ -1131,6 +1132,108 @@ function dispatch($db, $action, $data) {
             $db->prepare("DELETE FROM settings WHERE key = ?")->execute([$k]);
         }
         return ['ok' => true];
+    }
+
+    /* Completed tasks, bucketed into Friday→Thursday weeks (the owner celebrates
+     * wins on Thursday, so the week must end there). completed_at is stored UTC;
+     * everything here is converted to Asia/Jerusalem before bucketing, otherwise
+     * a task finished late at night lands in the wrong day. */
+    case 'completed': {
+        $p = array_merge($_GET, is_array($data) ? $data : []);
+        $tz = new DateTimeZone('Asia/Jerusalem');
+        $utc = new DateTimeZone('UTC');
+        $DAYS = ['ראשון','שני','שלישי','רביעי','חמישי','שישי','שבת'];
+
+        // the Friday on/before a given local date
+        $weekStartOf = function (DateTime $d) {
+            $s = clone $d;
+            $back = ((int)$s->format('w') - 5 + 7) % 7;   // 5 = Friday
+            if ($back) $s->modify("-$back days");
+            return $s->setTime(0, 0, 0);
+        };
+
+        $today = new DateTime('now', $tz);
+        $flat = !empty($p['flat']);
+
+        if (!empty($p['from']) || !empty($p['to'])) {
+            $fromL = new DateTime(($p['from'] ?: '1970-01-01') . ' 00:00:00', $tz);
+            $toL   = new DateTime(($p['to'] ?: $today->format('Y-m-d')) . ' 23:59:59', $tz);
+        } else {
+            $nWeeks = max(1, min(26, (int)($p['weeks'] ?? 4)));
+            $offset = isset($p['week']) ? max(0, (int)$p['week']) : null;
+            if ($offset !== null) { $nWeeks = 1; }
+            $curStart = $weekStartOf(clone $today);
+            $lastStart = clone $curStart;
+            if ($offset) $lastStart->modify('-' . (7 * $offset) . ' days');
+            $fromL = (clone $lastStart)->modify('-' . (7 * ($nWeeks - 1)) . ' days');
+            $toL = (clone $lastStart)->modify('+6 days')->setTime(23, 59, 59);
+        }
+
+        $fromUtc = (clone $fromL)->setTimezone($utc)->format('Y-m-d H:i:s');
+        $toUtc   = (clone $toL)->setTimezone($utc)->format('Y-m-d H:i:s');
+
+        $sql = "SELECT * FROM tasks WHERE status = 'done' AND completed_at != ''
+                AND completed_at BETWEEN ? AND ? ORDER BY completed_at DESC";
+        $st = $db->prepare($sql);
+        $st->execute([$fromUtc, $toUtc]);
+        $rows = $st->fetchAll(PDO::FETCH_ASSOC);
+
+        $projMap = projectMap($db);
+        $filterProject = trim((string)($p['project'] ?? ''));
+        $limit = max(1, min(1000, (int)($p['limit'] ?? 500)));
+
+        $curWeekStart = $weekStartOf(clone $today)->format('Y-m-d');
+        $buckets = [];
+        $flatList = [];
+        $n = 0;
+        foreach ($rows as $r) {
+            $proj = !empty($r['project_id']) && isset($projMap[$r['project_id']]) ? $projMap[$r['project_id']] : '';
+            if ($filterProject !== '' && mb_stripos($proj, $filterProject) === false) continue;
+            if (++$n > $limit) break;
+
+            $doneLocal = new DateTime($r['completed_at'], $utc);
+            $doneLocal->setTimezone($tz);
+            $ws = $weekStartOf(clone $doneLocal)->format('Y-m-d');
+
+            $task = [
+                'id' => (int)$r['id'],
+                'title' => $r['title'],
+                'completed_at' => $doneLocal->format('Y-m-d H:i'),
+                'day' => $DAYS[(int)$doneLocal->format('w')],
+            ];
+            if ($proj) $task['project'] = $proj;
+            foreach (['context','energy','size'] as $f) if (!empty($r[$f])) $task[$f] = $r[$f];
+
+            if ($flat) { $flatList[] = $task; continue; }
+
+            if (!isset($buckets[$ws])) {
+                $wsD = new DateTime($ws . ' 00:00:00', $tz);
+                $weD = (clone $wsD)->modify('+6 days');
+                $diffWeeks = (int)round(((int)strtotime($curWeekStart) - (int)strtotime($ws)) / 604800);
+                $buckets[$ws] = [
+                    'week_start' => $ws,
+                    'week_end' => $weD->format('Y-m-d'),
+                    'label' => $diffWeeks === 0 ? 'השבוע' : ($diffWeeks === 1 ? 'שבוע שעבר' : "לפני $diffWeeks שבועות"),
+                    'count' => 0,
+                    'by_project' => [],
+                    'tasks' => [],
+                ];
+            }
+            $buckets[$ws]['count']++;
+            $key = $proj ?: 'בלי פרויקט';
+            $buckets[$ws]['by_project'][$key] = ($buckets[$ws]['by_project'][$key] ?? 0) + 1;
+            $buckets[$ws]['tasks'][] = $task;
+        }
+
+        $out = [
+            'timezone' => 'Asia/Jerusalem',
+            'week_runs' => 'friday..thursday',
+            'range' => ['from' => $fromL->format('Y-m-d'), 'to' => $toL->format('Y-m-d')],
+            'total' => $flat ? count($flatList) : array_sum(array_column($buckets, 'count')),
+        ];
+        if ($flat) { $out['tasks'] = $flatList; }
+        else { $out['weeks'] = array_values($buckets); }   // already newest-first
+        return $out;
     }
 
     case 'export': {

@@ -53,6 +53,14 @@ https://chepti.com/tasks/api/api.php?action=help
   fu_recording/fu_whatsapp/fu_takeaways (0/1 — צ'קליסט המשך), notes.
 - state מחזיר upcoming_trainings. הרשימה המלאה ב-?action=all.
 
+דיווח על מה שבוצע:
+- action=completed מחזיר משימות שהושלמו, מקובצות לשבועות שישי..חמישי (שעון ישראל).
+  זה חשוב: המשתמשת חוגגת נצחונות ביום חמישי, ולכן השבוע נגמר בחמישי ולא בשבת.
+- פרמטרים: weeks=N (ברירת מחדל 4), week=0 (השבוע) / week=1 (שבוע שעבר),
+  from=YYYY-MM-DD&to=YYYY-MM-DD, project=<חלק משם>, flat=1, limit=N.
+- כל שבוע כולל count, פילוח by_project, ורשימת משימות עם שם היום ושעה.
+- כשמבקשים ממך "מה עשיתי השבוע" או סיכום לחמישי — זה האנדפוינט.
+
 יש גם אזור "רעיונות לאפליקציות":
 - action=app_upsert יוצר/מעדכן אפליקציה: {id?, name, notes?, color?}
 - action=item_upsert מוסיף שורה בתוכה: {id?, app_id, kind, title, body?, done?}
@@ -95,7 +103,13 @@ curl -s -X POST "$BASE?action=bulk_add" -H "X-Key: $KEY" \
         "להתקשר לאמא"
       ]}'
 
-# 6. הרבה פעולות בבקשה אחת:
+# 6. מה הושלם בשבוע שעבר (שישי..חמישי):
+curl -s "$BASE?action=completed&week=1" -H "X-Key: $KEY"
+
+# 7. סיכום 8 שבועות אחרונים לפרויקט מסוים:
+curl -s "$BASE?action=completed&weeks=8&project=ויזדי" -H "X-Key: $KEY"
+
+# 8. הרבה פעולות בבקשה אחת:
 curl -s -X POST "$BASE?action=ops" -H "X-Key: $KEY" \
   -H "Content-Type: application/json" \
   -d '{"ops":[

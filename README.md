@@ -83,6 +83,11 @@ curl -s -X POST "...?action=task_delete&key=PASSWORD" -d '{"id":12}'
 curl -s -X POST "...?action=project_create&key=PASSWORD" -d '{"name":"שיפוץ המטבח", "color":"#2FBFA7"}'
 curl -s -X POST "...?action=project_update&key=PASSWORD" -d '{"id":2, "status":"someday"}'
 
+# מה בוצע — מקובץ לשבועות שישי..חמישי (שעון ישראל):
+curl -s "...?action=completed&weeks=4&key=PASSWORD"
+curl -s "...?action=completed&week=1&key=PASSWORD"          # שבוע שעבר בלבד
+curl -s "...?action=completed&from=2026-07-01&to=2026-07-31&key=PASSWORD"
+
 # היסטוריה ושחזור:
 curl -s "...?action=history&limit=50&key=PASSWORD"
 curl -s -X POST "...?action=restore&key=PASSWORD" -d '{"history_id":45}'

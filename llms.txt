@@ -25,6 +25,14 @@
 - `POST ?action=training_delete` — `{"id":N}`
 - `?action=state` מחזיר גם `upcoming_trainings` (חמש הקרובות).
 
+## מה בוצע (דוח שבועי)
+- `GET ?action=completed` — משימות שהושלמו, מקובצות לשבועות **שישי עד חמישי** (שעון ישראל).
+  זה השבוע שלה — היא חוגגת נצחונות ביום חמישי, אז השבוע נגמר שם.
+- פרמטרים: `weeks=N` (ברירת מחדל 4) · `week=0` השבוע / `week=1` שבוע שעבר ·
+  `from=YYYY-MM-DD&to=YYYY-MM-DD` · `project=<חלק משם>` · `flat=1` לרשימה שטוחה · `limit=N`
+- כל שבוע מחזיר `count`, פילוח `by_project`, ורשימת משימות עם שם היום ושעת הביצוע.
+- דוגמה: `?action=completed&week=1&key=...` → מה הושלם בשבוע שעבר.
+
 ## רעיונות לאפליקציות (apps / app_items)
 - `POST ?action=app_upsert` — אפליקציה: `{"id"?, "name", "notes"?, "color"?}`
 - `POST ?action=item_upsert` — שורה בתוך אפליקציה: `{"id"?, "app_id", "kind", "title", "body"?, "done"?}`
