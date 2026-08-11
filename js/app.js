@@ -811,6 +811,7 @@ function openTrainingSheet(id) {
       <h3>${id != null ? 'עריכת הדרכה' : 'הדרכה חדשה'}</h3>
       ${id != null ? `<button class="corner-btn danger" id="ts-delete" title="מחיקה">${ic('trash', 17)}</button>` : '<span style="width:38px"></span>'}
     </div>
+    <div id="ts-draft-slot"></div>
 
     <div class="t-form">
 
@@ -974,23 +975,63 @@ function openTrainingSheet(id) {
   $('#ts-fu-add').onclick = addFu;
   $('#ts-fu-new').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); addFu(); } };
 
-  $('#ts-cancel').onclick = closeSheet;
-  $('#sheet-backdrop').onclick = closeSheet;
+  /* ---- טיוטה מקומית ---- */
+  const TS_TEXT = ['topic','place','date','time_from','time_to','contact_name','contact_role','contact_phone',
+    'contact_email','pay_amount','pay_process','people_count','style','audience','ideas','tools','message',
+    'structure','equipment','slides_url','recording_url','notes'];
+  const collectTraining = () => {
+    const o = {};
+    TS_TEXT.forEach(f => { const el = $('#ts-' + f); if (el) o[f] = el.value.trim(); });
+    o.mode = t.mode || '';
+    o.pay_received = t.pay_received == 1 ? 1 : 0;
+    o.followups = fuEncode(fu);
+    return o;
+  };
+  const applyTraining = d => {
+    TS_TEXT.forEach(f => { const el = $('#ts-' + f); if (el && d[f] !== undefined) el.value = d[f]; });
+    if (d.mode !== undefined) {
+      t.mode = d.mode;
+      $$('#task-sheet [data-tmode]').forEach(x => x.classList.toggle('on', x.dataset.tmode === t.mode));
+    }
+    if (d.pay_received !== undefined) {
+      t.pay_received = d.pay_received;
+      const pb = $('#task-sheet [data-ttoggle="pay_received"]');
+      if (pb) pb.classList.toggle('on', t.pay_received == 1);
+    }
+    if (d.followups !== undefined) {
+      try { const l = JSON.parse(d.followups); if (Array.isArray(l)) { fu = l; renderFu(); } } catch (e) {}
+    }
+    dayHint();
+    $$('#task-sheet textarea').forEach(el => grow(el));
+  };
+
+  const draftId = id != null ? id : 'new';
+  const existing = loadFormDraft('training', draftId);
+  armSheetDraft('training', draftId, collectTraining);
+  if (existing && JSON.stringify(existing.data) !== SHEET_CTX.base) {
+    applyTraining(existing.data);
+    $('#ts-draft-slot').innerHTML = draftBanner(existing.at);
+    $('#draft-drop').onclick = () => {
+      clearFormDraft('training', draftId);
+      closeSheet({ discard: true });
+      openTrainingSheet(id);
+      toast('הטיוטה נמחקה — חזרנו למה שנשמר');
+    };
+  }
+
+  $('#ts-cancel').onclick = () => closeSheet();
+  $('#sheet-backdrop').onclick = backdropClose;
   $('#ts-save').onclick = async () => {
-    const payload = { ...trainingRef(t), client_id: t.client_id || ('c' + Date.now().toString(36)) };
-    ['topic','place','date','time_from','time_to','contact_name','contact_role','contact_phone','contact_email',
-     'pay_amount','pay_process','people_count','style','audience','ideas','tools','message','structure','equipment',
-     'slides_url','recording_url','notes'].forEach(f => payload[f] = $('#ts-' + f).value.trim());
-    payload.mode = t.mode || '';
-    payload.pay_received = t.pay_received == 1 ? 1 : 0;
-    payload.followups = fuEncode(fu);
-    closeSheet();
+    const payload = { ...trainingRef(t), client_id: t.client_id || ('c' + Date.now().toString(36)), ...collectTraining() };
+    clearFormDraft('training', draftId);
+    closeSheet({ discard: true });
     await saveTraining(payload);
   };
 
   const del = $('#ts-delete');
   if (del) del.onclick = async () => {
-    closeSheet();
+    clearFormDraft('training', draftId);
+    closeSheet({ discard: true });
     if (isTempTraining(t)) {
       DATA.trainings = DATA.trainings.filter(x => x.id != t.id);
       setPendingQueue(pendingQueue().filter(op => op.body?.client_id !== t.client_id));
@@ -1818,6 +1859,7 @@ function openTaskSheet(id, prefill = null) {
     <div class="sheet-handle"></div>
     <h3>${isNew ? 'משימה חדשה' : 'עריכת משימה'}</h3>
     ${isNew ? '<div id="sheet-followup-hint" class="followup-hint"></div>' : ''}
+    <div id="sheet-draft-slot"></div>
     <div class="field">
       <input type="text" id="sheet-title" placeholder="מה המשימה?" value="${esc(t.title)}">
     </div>
@@ -1877,43 +1919,74 @@ function openTaskSheet(id, prefill = null) {
     // רענון הצ'יפים בלבד
     $$(`#task-sheet [data-sheet-chip="${f}"]`).forEach(x =>
       x.classList.toggle('on', x.dataset.val === EDITING[f]));
+    touchSheet();
   });
 
-  $('#sheet-cancel').onclick = closeSheet;
-  $('#sheet-backdrop').onclick = closeSheet;
+  /* ---- טיוטה מקומית ---- */
+  const collectTask = () => ({
+    title: $('#sheet-title').value.trim(),
+    notes: $('#sheet-notes').value.trim(),
+    project_id: $('#sheet-project').value || '',
+    due_date: $('#sheet-due').value,
+    status: EDITING.status, context: EDITING.context,
+    energy: EDITING.energy, size: EDITING.size,
+  });
+  const applyTask = d => {
+    if (d.title !== undefined) $('#sheet-title').value = d.title;
+    if (d.notes !== undefined) $('#sheet-notes').value = d.notes;
+    if (d.project_id !== undefined) $('#sheet-project').value = d.project_id || '';
+    if (d.due_date !== undefined) $('#sheet-due').value = d.due_date;
+    ['status', 'context', 'energy', 'size'].forEach(f => {
+      if (d[f] === undefined) return;
+      EDITING[f] = d[f];
+      $$(`#task-sheet [data-sheet-chip="${f}"]`).forEach(x =>
+        x.classList.toggle('on', x.dataset.val === EDITING[f]));
+    });
+  };
+
+  const tDraftId = isNew ? 'new' : id;
+  const tExisting = loadFormDraft('task', tDraftId);
+  armSheetDraft('task', tDraftId, collectTask);
+  if (tExisting && JSON.stringify(tExisting.data) !== SHEET_CTX.base) {
+    applyTask(tExisting.data);
+    const slot = $('#sheet-draft-slot');
+    if (slot) {
+      slot.innerHTML = draftBanner(tExisting.at);
+      $('#draft-drop').onclick = () => {
+        clearFormDraft('task', tDraftId);
+        closeSheet({ discard: true });
+        openTaskSheet(id, prefill);
+        toast('הטיוטה נמחקה — חזרנו למה שנשמר');
+      };
+    }
+  }
+
+  $('#sheet-cancel').onclick = () => closeSheet();
+  $('#sheet-backdrop').onclick = backdropClose;
   $('#sheet-save').onclick = async () => {
-    const fields = {
-      title: $('#sheet-title').value.trim(),
-      notes: $('#sheet-notes').value.trim(),
-      project_id: $('#sheet-project').value || null,
-      due_date: $('#sheet-due').value,
-      status: EDITING.status, context: EDITING.context,
-      energy: EDITING.energy, size: EDITING.size,
-    };
+    const fields = collectTask();
+    fields.project_id = fields.project_id || null;
     if (!fields.title) { $('#sheet-title').focus(); return; }
-    closeSheet();
+    clearFormDraft('task', tDraftId);
+    closeSheet({ discard: true });
     if (isNew) await createTask(fields);
     else await updateTask(id, fields);
   };
   const fup = $('#sheet-followup');
   if (fup) fup.onclick = async () => {
     // שומרים קודם את מה שנערך, ואז פותחים משימה חדשה שיורשת את ההקשר
-    const fields = {
-      title: $('#sheet-title').value.trim(),
-      notes: $('#sheet-notes').value.trim(),
-      project_id: $('#sheet-project').value || null,
-      due_date: $('#sheet-due').value,
-      status: EDITING.status, context: EDITING.context,
-      energy: EDITING.energy, size: EDITING.size,
-    };
-    closeSheet();
+    const fields = collectTask();
+    fields.project_id = fields.project_id || null;
+    clearFormDraft('task', tDraftId);
+    closeSheet({ discard: true });
     if (fields.title) await updateTask(id, fields);
     openFollowUp({ ...fields, id });
   };
 
   const del = $('#sheet-delete');
   if (del) del.onclick = async () => {
-    closeSheet();
+    clearFormDraft('task', tDraftId);
+    closeSheet({ discard: true });
     await api('task_delete', { id });
     DATA.tasks = DATA.tasks.filter(x => x.id != id);
     render();
@@ -1934,11 +2007,103 @@ function openFollowUp(prev) {
   if (hint && prev.title) hint.textContent = 'ממשיך את: ' + prev.title;
 }
 
-function closeSheet() {
-  $('#task-sheet').classList.add('hidden');
-  $('#task-sheet').classList.remove('wide');
+/* ============ טיוטה מקומית לטפסים ============ */
+/* כל הקלדה בטופס נשמרת במכשיר. גם אם נסגר בטעות, קרסה סוללה או נכנסה שיחה —
+   התוכן חוזר בפתיחה הבאה. מחיקה היא תמיד פעולה מפורשת. */
+
+const DRAFT_TTL_DAYS = 14;
+const dKey = (kind, id) => `tasks_formdraft_${kind}_${id == null ? 'new' : id}`;
+
+function saveFormDraft(kind, id, data) {
+  try { localStorage.setItem(dKey(kind, id), JSON.stringify({ at: Date.now(), data })); } catch (e) {}
+}
+function loadFormDraft(kind, id) {
+  try {
+    const raw = localStorage.getItem(dKey(kind, id));
+    if (!raw) return null;
+    const o = JSON.parse(raw);
+    if (!o || !o.data) return null;
+    if (Date.now() - (o.at || 0) > DRAFT_TTL_DAYS * 864e5) { clearFormDraft(kind, id); return null; }
+    return o;
+  } catch (e) { return null; }
+}
+function clearFormDraft(kind, id) {
+  try { localStorage.removeItem(dKey(kind, id)); } catch (e) {}
+}
+
+// SHEET_CTX מחזיק את מה שצריך כדי לדעת אם יש שינויים ואיך לשמור אותם
+let SHEET_CTX = null;
+let SHEET_AUTOSAVE_TIMER = null;
+
+function sheetSnapshot() {
+  try { return SHEET_CTX ? JSON.stringify(SHEET_CTX.collect()) : null; } catch (e) { return null; }
+}
+function isSheetDirty() {
+  if (!SHEET_CTX) return false;
+  const now = sheetSnapshot();
+  return now !== null && now !== SHEET_CTX.base;
+}
+
+/** נקרא בכל שינוי בטופס (גם מצ׳יפים שלא מפיקים אירוע input). */
+function touchSheet() {
+  if (!SHEET_CTX) return;
+  clearTimeout(SHEET_AUTOSAVE_TIMER);
+  SHEET_AUTOSAVE_TIMER = setTimeout(() => {
+    if (!SHEET_CTX) return;
+    if (isSheetDirty()) saveFormDraft(SHEET_CTX.kind, SHEET_CTX.id, SHEET_CTX.collect());
+  }, 400);
+}
+
+/** מחבר את מנגנון הטיוטה לגיליון הפתוח. */
+function armSheetDraft(kind, id, collect) {
+  SHEET_CTX = { kind, id, collect, base: null };
+  SHEET_CTX.base = sheetSnapshot();
+  const sheet = $('#task-sheet');
+  sheet.oninput = touchSheet;
+  sheet.onchange = touchSheet;
+}
+
+function draftBanner(when) {
+  const ago = timeAgo(new Date(when).toISOString().slice(0, 19).replace('T', ' '));
+  return `
+  <div class="draft-banner" id="draft-banner">
+    ${ic('cloudOff', 15)}
+    <span>שוחזרה טיוטה שלא נשמרה (${esc(ago)})</span>
+    <button type="button" class="btn btn-danger draft-drop" id="draft-drop">${ic('trash', 14)} מחיקת הטיוטה</button>
+  </div>`;
+}
+
+/* ============ סגירת גיליון ============ */
+
+function closeSheet(opts) {
+  const discard = opts && opts.discard;
+  if (SHEET_CTX) {
+    clearTimeout(SHEET_AUTOSAVE_TIMER);
+    if (discard) {
+      clearFormDraft(SHEET_CTX.kind, SHEET_CTX.id);
+    } else if (isSheetDirty()) {
+      // לא זורקים כלום בשקט — שומרים ומודיעים
+      saveFormDraft(SHEET_CTX.kind, SHEET_CTX.id, SHEET_CTX.collect());
+      toast('נשמרה טיוטה מקומית — התוכן יחזור בפתיחה הבאה');
+    }
+  }
+  SHEET_CTX = null;
+  const sheet = $('#task-sheet');
+  sheet.oninput = null;
+  sheet.onchange = null;
+  sheet.classList.add('hidden');
+  sheet.classList.remove('wide');
   $('#sheet-backdrop').classList.add('hidden');
   EDITING = null;
+}
+
+/** לחיצה על הרקע: לא סוגרת טופס עם שינויים שלא נשמרו — זה מה שגרם לאיבוד תוכן. */
+function backdropClose() {
+  if (isSheetDirty()) {
+    toast('יש שינויים שלא נשמרו — שמירה, או ביטול כדי לצאת');
+    return;
+  }
+  closeSheet({ discard: true });
 }
 
 /* ============ חיפוש גלובלי ============ */

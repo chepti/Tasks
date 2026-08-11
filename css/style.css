@@ -961,6 +961,22 @@ button.chip:hover { transform: translateY(-1px); border-color: var(--ink-soft); 
 .rev-no { background: var(--bg-soft); color: var(--ink-soft); }
 .rev-no:hover { background: var(--coral-soft); color: #D8402F; transform: scale(1.1); }
 
+/* ============ טיוטה מקומית שהשוחזרה ============ */
+
+.draft-banner {
+  display: flex; align-items: center; gap: 9px; flex-wrap: wrap;
+  background: var(--peach-soft);
+  border: 2px dashed var(--peach);
+  border-radius: 16px;
+  padding: 9px 13px;
+  margin-bottom: 12px;
+  font-size: .85rem; font-weight: 600;
+  color: #8A5410;
+}
+.draft-banner svg { color: var(--peach); flex-shrink: 0; }
+.draft-banner > span { flex: 1; min-width: 0; }
+.draft-drop { padding: 5px 12px; font-size: .78rem; }
+
 /* ============ משימת המשך ============ */
 
 .followup-btn {
