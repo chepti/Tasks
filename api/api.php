@@ -52,7 +52,7 @@ const ENUMS = [
 
 const TMODE_LABELS = ['physical' => 'פיזי', 'online' => 'מקוון', 'hybrid' => 'היברידי'];
 const APP_FIELDS = ['name','notes','color','status','sort_order'];
-const APP_ITEM_FIELDS = ['app_id','kind','title','body','done','sort_order'];
+const APP_ITEM_FIELDS = ['app_id','kind','title','body','done','done_at','sort_order'];
 
 function baseUrl() {
     $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
@@ -139,7 +139,7 @@ function helpDoc() {
             'item_delete'    => 'POST — { id }.',
             'items_reorder'  => 'POST — { ids:[...] } sets sort_order by array position (drag & drop).',
             'ops'            => 'POST — { ops:[ {action, ...}, ... ] } run in order; returns per-op ok/error. One round-trip for many changes.',
-            'completed'      => 'GET  — tasks that were finished, bucketed into Friday..Thursday weeks (Asia/Jerusalem). Params: weeks=N (default 4, max 26) | week=N (0=this week, 1=last week) | from=YYYY-MM-DD&to=YYYY-MM-DD | project=<name substring> | flat=1 for one plain list | limit=N. Each week returns count, by_project breakdown and the task list with day names. Use this to report what got done.',
+            'completed'      => 'GET  — everything that got finished, bucketed into Friday..Thursday weeks (Asia/Jerusalem). Includes both tasks and items ticked off inside an app-idea list (each row carries source=task|app, and app items also carry app + kind). Params: weeks=N (default 4, max 26) | week=N (0=this week, 1=last week) | from=YYYY-MM-DD&to=YYYY-MM-DD | project=<name substring, matches an app name too> | tasks_only=1 to exclude app items | flat=1 for one plain list | limit=N. Each week returns count, by_project breakdown and the list with day names. Use this to report what got done.',
             'history'        => 'GET  — ?limit=100 recent changes with before-snapshots.',
             'restore'        => 'POST — { history_id } revert an item to that snapshot.',
             'export'         => 'GET  — full backup JSON.',
@@ -356,6 +356,10 @@ $db->exec("CREATE TABLE IF NOT EXISTS app_items (
     updated_at TEXT DEFAULT (datetime('now'))
 )");
 $db->exec("CREATE INDEX IF NOT EXISTS idx_app_items_app ON app_items(app_id, sort_order)");
+// זמן סימון הביצוע — בלעדיו אין איך לשבץ פריט שבוצע לשבוע הנכון בנצחונות
+try { $db->exec("ALTER TABLE app_items ADD COLUMN done_at TEXT DEFAULT ''"); } catch (Throwable $e) { /* exists */ }
+// מילוי לאחור לפריטים שסומנו לפני שהעמודה נוספה — updated_at הוא הקירוב הטוב ביותר
+$db->exec("UPDATE app_items SET done_at = updated_at WHERE done = 1 AND (done_at IS NULL OR done_at = '')");
 
 $db->exec("CREATE TABLE IF NOT EXISTS history (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -922,6 +926,10 @@ function dispatch($db, $action, $data) {
 
     case 'item_upsert': {
         $id = (int)($data['id'] ?? 0);
+        // סימון בוצע חותם זמן, וביטול הסימון מנקה אותו — אלא אם נשלח done_at מפורש
+        if (array_key_exists('done', $data) && !array_key_exists('done_at', $data)) {
+            $data['done_at'] = ((int)$data['done'] === 1) ? gmdate('Y-m-d H:i:s') : '';
+        }
         if ($id) {
             $sets = []; $vals = [];
             foreach (APP_ITEM_FIELDS as $f) {
@@ -1172,11 +1180,35 @@ function dispatch($db, $action, $data) {
         $fromUtc = (clone $fromL)->setTimezone($utc)->format('Y-m-d H:i:s');
         $toUtc   = (clone $toL)->setTimezone($utc)->format('Y-m-d H:i:s');
 
-        $sql = "SELECT * FROM tasks WHERE status = 'done' AND completed_at != ''
-                AND completed_at BETWEEN ? AND ? ORDER BY completed_at DESC";
-        $st = $db->prepare($sql);
+        $st = $db->prepare("SELECT * FROM tasks WHERE status = 'done' AND completed_at != ''
+                            AND completed_at BETWEEN ? AND ? ORDER BY completed_at DESC");
         $st->execute([$fromUtc, $toUtc]);
         $rows = $st->fetchAll(PDO::FETCH_ASSOC);
+
+        // פריטים שסומנו כבוצעו בתוך אפליקציה נחשבים גם הם הישג — הם ממוזגים
+        // לאותה רשימה, עם source=app כדי שאפשר להבדיל
+        $appNames = [];
+        foreach ($db->query("SELECT id, name FROM apps")->fetchAll(PDO::FETCH_ASSOC) as $a) {
+            $appNames[$a['id']] = $a['name'];
+        }
+        if (empty($p['tasks_only'])) {
+            $st2 = $db->prepare("SELECT * FROM app_items WHERE done = 1 AND done_at != ''
+                                 AND done_at BETWEEN ? AND ? ORDER BY done_at DESC");
+            $st2->execute([$fromUtc, $toUtc]);
+            foreach ($st2->fetchAll(PDO::FETCH_ASSOC) as $it) {
+                $rows[] = [
+                    'id' => $it['id'],
+                    'title' => $it['title'],
+                    'completed_at' => $it['done_at'],
+                    'project_id' => null,
+                    'context' => '', 'energy' => '', 'size' => '',
+                    '_source' => 'app',
+                    '_app' => $appNames[$it['app_id']] ?? '',
+                    '_kind' => $it['kind'],
+                ];
+            }
+            usort($rows, function ($a, $b) { return strcmp($b['completed_at'], $a['completed_at']); });
+        }
 
         $projMap = projectMap($db);
         $filterProject = trim((string)($p['project'] ?? ''));
@@ -1187,7 +1219,10 @@ function dispatch($db, $action, $data) {
         $flatList = [];
         $n = 0;
         foreach ($rows as $r) {
-            $proj = !empty($r['project_id']) && isset($projMap[$r['project_id']]) ? $projMap[$r['project_id']] : '';
+            $fromApp = ($r['_source'] ?? '') === 'app';
+            // פריט מאפליקציה משתייך לאפליקציה שלו, לא לפרויקט
+            $proj = $fromApp ? ($r['_app'] ?: 'אפליקציות')
+                             : (!empty($r['project_id']) && isset($projMap[$r['project_id']]) ? $projMap[$r['project_id']] : '');
             if ($filterProject !== '' && mb_stripos($proj, $filterProject) === false) continue;
             if (++$n > $limit) break;
 
@@ -1200,7 +1235,9 @@ function dispatch($db, $action, $data) {
                 'title' => $r['title'],
                 'completed_at' => $doneLocal->format('Y-m-d H:i'),
                 'day' => $DAYS[(int)$doneLocal->format('w')],
+                'source' => $fromApp ? 'app' : 'task',
             ];
+            if ($fromApp) { $task['app'] = $r['_app']; $task['kind'] = $r['_kind']; }
             if ($proj) $task['project'] = $proj;
             foreach (['context','energy','size'] as $f) if (!empty($r[$f])) $task[$f] = $r[$f];
 

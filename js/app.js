@@ -1353,6 +1353,8 @@ async function toggleItemDone(id) {
   const it = (DATA.app_items || []).find(x => x.id == id);
   if (!it) return;
   it.done = it.done == 1 ? 0 : 1;
+  // חותמים זמן מקומית כדי שהפריט ייכנס לנצחונות מיד, גם לפני שהשרת עונה
+  it.done_at = it.done == 1 ? new Date().toISOString().slice(0, 19).replace('T', ' ') : '';
   saveCache();
   render();
   await apiQueued('item_upsert', { id, done: it.done });
@@ -1470,7 +1472,11 @@ function bindIdeas() {
   const tda = $('#toggle-done-apps');
   if (tda) tda.onclick = () => { SHOW_DONE_APPS = !SHOW_DONE_APPS; render(); };
 
-  $$('[data-toggle-item]').forEach(b => b.onclick = () => toggleItemDone(+b.dataset.toggleItem));
+  $$('[data-toggle-item]').forEach(b => b.onclick = () => {
+    const it = (DATA.app_items || []).find(x => x.id == b.dataset.toggleItem);
+    if (it && it.done != 1) confetti(45, b);   // גם רעיון שהושלם הוא נצחון
+    toggleItemDone(+b.dataset.toggleItem);
+  });
   $$('[data-cycle-kind]').forEach(b => b.onclick = () => cycleItemKind(+b.dataset.cycleKind));
   $$('[data-del-item]').forEach(b => b.onclick = () => deleteAppItem(+b.dataset.delItem));
   $$('[data-copy-item]').forEach(b => b.onclick = e => {
@@ -1596,19 +1602,40 @@ function openAppModal(id) {
 }
 
 /* ---------- תצוגת נצחונות ---------- */
+/* נצחון = כל דבר שסומן כבוצע: משימה, או שורה בתוך אפליקציית רעיונות. שניהם
+   נמדדים באותה ספירה שבועית, כי שניהם עבודה שנעשתה. */
+function winsList() {
+  const out = [];
+  DATA.tasks.forEach(t => {
+    if (t.status !== 'done' || !t.completed_at) return;
+    const p = projectOf(t);
+    out.push({ source: 'task', id: t.id, title: t.title, at: t.completed_at,
+               tagName: p ? p.name : '', tagColor: p ? p.color : '' });
+  });
+  (DATA.app_items || []).forEach(it => {
+    if (it.done != 1 || !it.done_at) return;
+    const a = (DATA.apps || []).find(x => x.id == it.app_id);
+    out.push({ source: 'app', id: it.id, title: it.title || '(בלי כותרת)', at: it.done_at,
+               tagName: a ? a.name : 'אפליקציות', tagColor: a ? a.color : '',
+               kind: it.kind });
+  });
+  return out.sort((a, b) => String(b.at).localeCompare(String(a.at)));
+}
+
 function renderWins() {
-  const done = doneTasks();
+  const done = winsList();
   const ws = weekStart();
   const monthAgo = new Date(); monthAgo.setDate(monthAgo.getDate() - 30);
 
-  const thisWeek = done.filter(t => parseUTC(t.completed_at) >= ws);
-  const thisMonth = done.filter(t => parseUTC(t.completed_at) >= monthAgo);
+  const thisWeek = done.filter(w => parseUTC(w.at) >= ws);
+  const thisMonth = done.filter(w => parseUTC(w.at) >= monthAgo);
+  const fromApps = thisWeek.filter(w => w.source === 'app').length;
 
   // קיבוץ לפי יום מקומי
   const byDay = {};
-  for (const t of done.slice(0, 200)) {
-    const day = localDateStr(parseUTC(t.completed_at));
-    (byDay[day] = byDay[day] || []).push(t);
+  for (const w of done.slice(0, 250)) {
+    const day = localDateStr(parseUTC(w.at));
+    (byDay[day] = byDay[day] || []).push(w);
   }
 
   const isThursday = new Date().getDay() === 4;
@@ -1618,6 +1645,7 @@ function renderWins() {
     <div class="big-num">${thisWeek.length}</div>
     <div class="label">נצחונות השבוע ${isThursday ? '· יום חמישי — זמן לחגוג!' : ''}</div>
     <div class="wins-stats">
+      ${fromApps ? `<span class="stat-pill">${ic('lightbulb', 14)} מהאפליקציות: ${fromApps}</span>` : ''}
       <span class="stat-pill">${ic('calendar', 14)} החודש: ${thisMonth.length}</span>
       <span class="stat-pill">${ic('trophy', 14)} סה"כ: ${done.length}</span>
     </div>
@@ -1626,20 +1654,22 @@ function renderWins() {
   ${Object.entries(byDay).map(([day, list]) => `
     <div class="day-group">
       <div class="day-head">${dayLabel(day)} <span class="day-count">${list.length}</span></div>
-      ${list.map(t => {
-        const p = projectOf(t);
-        const d = parseUTC(t.completed_at);
+      ${list.map(w => {
+        const d = parseUTC(w.at);
+        const tag = w.tagName
+          ? ` <span class="tag t-gray"${w.tagColor ? ` style="background:${w.tagColor}22;color:${w.tagColor}"` : ''}>${w.source === 'app' ? ic('lightbulb', 10) : ''}${esc(w.tagName)}</span>`
+          : '';
         return `
-        <div class="win-card">
+        <div class="win-card${w.source === 'app' ? ' from-app' : ''}">
           <span class="win-check">${ic('check', 18)}</span>
-          <span class="win-title">${esc(t.title)}${p ? ` <span class="tag t-gray" style="background:${p.color}22;color:${p.color}">${esc(p.name)}</span>` : ''}</span>
+          <span class="win-title">${esc(w.title)}${tag}</span>
           <span class="win-time">${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}</span>
-          <button class="win-undo" data-reopen="${t.id}" title="החזרה לרשימה">${ic('rotateCcw', 15)}</button>
+          <button class="win-undo" data-${w.source === 'app' ? 'reopen-item' : 'reopen'}="${w.id}" title="החזרה לרשימה">${ic('rotateCcw', 15)}</button>
         </div>`;
       }).join('')}
     </div>
   `).join('')}
-  ${done.length === 0 ? `<div class="empty-state">${ic('trophy', 44)}<p>הנצחונות הראשונים בדרך</p><p class="sub">כל משימה שתסמני תופיע כאן</p></div>` : ''}`;
+  ${done.length === 0 ? `<div class="empty-state">${ic('trophy', 44)}<p>הנצחונות הראשונים בדרך</p><p class="sub">כל משימה או רעיון שתסמני יופיעו כאן</p></div>` : ''}`;
 }
 
 /* ---------- חיבור אירועים ---------- */
@@ -1708,6 +1738,10 @@ function bindMain() {
     await api('task_reopen', { id: +b.dataset.reopen });
     await reload();
     toast('חזרה לרשימה');
+  });
+  $$('[data-reopen-item]').forEach(b => b.onclick = async () => {
+    await toggleItemDone(+b.dataset.reopenItem);
+    toast('חזר לרשימת הרעיונות');
   });
   // הדרכות
   $$('[data-tedit]').forEach(el => el.onclick = e => {
