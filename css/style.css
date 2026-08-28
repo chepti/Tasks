@@ -963,6 +963,72 @@ button.chip:hover { transform: translateY(-1px); border-color: var(--ink-soft); 
 .rev-no { background: var(--bg-soft); color: var(--ink-soft); }
 .rev-no:hover { background: var(--coral-soft); color: #D8402F; transform: scale(1.1); }
 
+/* ============ ימי פרויקט / ממש לעכשיו / יתומות / קו מחיקה ============ */
+
+.day-chips .chip { width: 40px; padding: 7px 0; justify-content: center; }
+
+.days-badge {
+  display: inline-flex; align-items: center; gap: 3px;
+  background: var(--bg-soft); color: var(--ink-soft);
+  border-radius: var(--r-pill); padding: 1px 8px;
+  font-size: .7rem; font-weight: 600;
+  letter-spacing: .06em;
+}
+.days-badge.today { background: var(--lilac-soft); color: #6A58E0; }
+
+/* הסקציה הנעוצה של "ממש לעכשיו" */
+.pinned-title { color: #C77518; }
+.pinned-title svg { color: var(--peach); }
+.pinned-list .task-card {
+  background: linear-gradient(135deg, #fff, var(--peach-soft));
+  border: 2px solid var(--peach);
+}
+
+/* משימות בלי פרויקט אב */
+.orphan-toggle {
+  font-family: inherit; cursor: pointer;
+  background: none; border: none;
+  width: 100%; text-align: right;
+}
+.orphan-list { display: flex; flex-direction: column; gap: 8px; }
+.orphan-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 14px;
+  transition: opacity .3s, transform .3s;
+}
+.orphan-row.adopted { opacity: 0; transform: translateX(-20px); }
+.orphan-main { flex: 1; min-width: 0; cursor: pointer; }
+.orphan-pick {
+  flex-shrink: 0; width: auto; max-width: 45%;
+  padding: 8px 12px; font-size: .85rem; border-radius: var(--r-pill);
+}
+
+/* קו העיפרון בגרירה */
+.task-card { position: relative; overflow: hidden; }
+.task-card.striking { touch-action: pan-y; cursor: grabbing; }
+.strike-line {
+  position: absolute;
+  top: 50%; height: 3px;
+  background: linear-gradient(90deg, transparent, var(--ink-soft) 12%, var(--ink) 50%, var(--ink-soft) 88%, transparent);
+  border-radius: 3px;
+  pointer-events: none;
+  transform: translateY(-50%) rotate(-.6deg);
+  opacity: .75;
+  transition: background .15s;
+}
+.task-card.strike-armed .strike-line {
+  background: linear-gradient(90deg, transparent, #E2513C 12%, #C43A28 50%, #E2513C 88%, transparent);
+  height: 4px;
+  opacity: 1;
+}
+.task-card.strike-armed { background: var(--coral-soft); }
+.task-card.struck-out {
+  animation: struck 240ms ease forwards;
+}
+@keyframes struck {
+  to { opacity: 0; transform: translateX(-14px) scale(.97); }
+}
+
 /* ============ טיוטה מקומית שהשוחזרה ============ */
 
 .draft-banner {

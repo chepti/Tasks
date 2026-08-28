@@ -111,6 +111,7 @@ let OPEN_APPS = new Set();        // אילו כרטיסי אפליקציה פת
 let SHOW_DONE_ITEMS = new Set();  // באילו אפליקציות מוצגים גם הפריטים שבוצעו
 let EXPANDED_PROMPTS = new Set(); // פרומפטים ארוכים שנפרשו במלואם
 let SHOW_DONE_APPS = false;       // האם להציג את האפליקציות שהושלמו
+let SHOW_ORPHANS = false;         // האם לפתוח את רשימת המשימות בלי פרויקט אב
 let IDEAS_SEARCH = '';            // חיפוש חופשי ברעיונות ובפרומפטים
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -230,6 +231,7 @@ function weekStart() {
 }
 
 const DAY_NAMES = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
+const DAY_SHORT = ['א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ש'];
 function dayLabel(dateStr) {
   const today = todayStr();
   const d = new Date(dateStr + 'T12:00:00');
@@ -403,9 +405,22 @@ function taskCard(t, { defer = false, withProject = true } = {}) {
 }
 
 /* ---------- תצוגת עכשיו ---------- */
+/* פרויקט יכול להיות מוגדר לימים מסוימים. בשאר הימים המשימות שלו לא מוצגות
+   ב"עכשיו" — כדי שהמסך יראה רק מה שרלוונטי היום. */
+function projectActiveToday(t) {
+  const p = projectOf(t);
+  if (!p || !p.active_days) return true;
+  const days = String(p.active_days).split(',').map(s => s.trim()).filter(s => s !== '');
+  if (!days.length) return true;
+  return days.includes(String(new Date().getDay()));
+}
+
 function nowMatches(t) {
   if (['done', 'dropped', 'draft', 'someday', 'waiting'].includes(t.status)) return false;
   if (isSnoozed(t)) return false;
+  // כוכב = "ממש לעכשיו", ולכן עוקף את סינון הימים ואת הסינון הידני
+  if (t.is_next == 1) return true;
+  if (!projectActiveToday(t)) return false;
   const f = NOW_FILTER;
   if (f.context && t.context && t.context !== f.context) return false;
   if (f.energy && t.energy && ENERGY[t.energy].rank > ENERGY[f.energy].rank) return false;
@@ -420,12 +435,20 @@ function renderNow() {
       ${ic(icon, 14)}${label}
     </button>`;
 
-  const tasks = openTasks().filter(nowMatches).sort((a, b) =>
-    (b.is_next - a.is_next) ||
+  const byPriority = (a, b) =>
     ((a.due_date || '9999') > (b.due_date || '9999') ? 1 : (a.due_date || '9999') < (b.due_date || '9999') ? -1 : 0) ||
     ((SIZE[a.size]?.rank || 2) - (SIZE[b.size]?.rank || 2)) ||
-    (a.id - b.id)
-  );
+    (a.id - b.id);
+
+  const open = openTasks();
+  const tasks = open.filter(nowMatches).sort(byPriority);
+  const pinned = tasks.filter(t => t.is_next == 1);
+  const rest = tasks.filter(t => t.is_next != 1);
+  // כמה הוסתרו כי הפרויקט שלהן לא אקטיבי היום — כדי שלא יהיה תחושה שדברים נעלמו
+  const hiddenByDay = open.filter(t =>
+    t.is_next != 1 && !isSnoozed(t) &&
+    !['done', 'dropped', 'draft', 'someday', 'waiting'].includes(t.status) &&
+    !projectActiveToday(t)).length;
 
   const filtersOn = f.context || f.energy || f.size;
 
@@ -458,16 +481,21 @@ function renderNow() {
     </div>
   </div>
 
-  ${tasks.length ? `
-    <div class="section-title">${filtersOn ? 'מתאים לך עכשיו' : 'כל מה שפתוח'} <span class="count">${tasks.length}</span></div>
-    <div class="task-list">${tasks.map(t => taskCard(t, { defer: true })).join('')}</div>
-  ` : `
+  ${pinned.length ? `
+    <div class="section-title pinned-title">${ic('star', 18)} ממש לעכשיו <span class="count">${pinned.length}</span></div>
+    <div class="task-list pinned-list">${pinned.map(t => taskCard(t, { defer: true })).join('')}</div>
+  ` : ''}
+
+  ${rest.length ? `
+    <div class="section-title">${filtersOn ? 'מתאים לך עכשיו' : 'כל מה שפתוח'} <span class="count">${rest.length}</span>${hiddenByDay ? `<span class="tag t-gray">${ic('calendar', 11)}${hiddenByDay} מוסתרות לפי ימי הפרויקט</span>` : ''}</div>
+    <div class="task-list">${rest.map(t => taskCard(t, { defer: true })).join('')}</div>
+  ` : (pinned.length ? '' : `
     <div class="empty-state">
       ${ic('coffee', 44)}
       <p>אין כלום שמתאים לסינון הזה</p>
       <p class="sub">אולי זה הזמן להפסקת קפה? מגיע לך</p>
     </div>
-  `}`;
+  `)}`;
 }
 
 /* ---------- תצוגת פרויקטים ---------- */
@@ -482,13 +510,18 @@ function renderProjects() {
     const pct = tasks.length ? Math.round(done / tasks.length * 100) : 0;
     const isOpen = OPEN_PROJECTS.has(p.id);
     const next = open.find(t => t.is_next == 1);
+    const pDays = String(p.active_days || '').split(',').map(s => s.trim()).filter(s => s !== '');
+    const pActiveToday = !pDays.length || pDays.includes(String(new Date().getDay()));
     return `
     <div class="card project-card ${isOpen ? 'open' : ''}" data-project-card="${p.id}">
       <div class="project-head" data-toggle-project="${p.id}">
         <span class="project-dot" style="background:${p.color || '#C3C0D2'}"></span>
         <div style="flex:1;min-width:0">
           <div class="project-name">${esc(p.name)}</div>
-          <div class="project-meta">${open.length ? `${open.length} פתוחות` : 'הכל בוצע!'} · ${done}/${tasks.length}</div>
+          <div class="project-meta">
+            ${open.length ? `${open.length} פתוחות` : 'הכל בוצע!'} · ${done}/${tasks.length}
+            ${pDays.length ? ` · <span class="days-badge${pActiveToday ? ' today' : ''}">${ic('calendar', 10)}${pDays.map(d => DAY_SHORT[+d]).join(' ')}</span>` : ''}
+          </div>
         </div>
         <button class="icon-btn" data-edit-project="${p.id}" title="עריכה" style="width:34px;height:34px;box-shadow:none;background:transparent">${ic('pencil', 16)}</button>
         <span class="project-chevron">${ic('chevronDown', 20)}</span>
@@ -523,6 +556,8 @@ function renderProjects() {
 /* ---------- תצוגת הכל ---------- */
 function renderAll() {
   const open = openTasks();
+  // משימות יתומות — נכנסו בדרכים שונות בלי פרויקט אב
+  const orphans = open.filter(t => !t.project_id);
   const groups = [
     ['next',    'הבא בתור',  'star'],
     ['inbox',   'מלאי',      'inbox'],
@@ -535,6 +570,27 @@ function renderAll() {
     <button class="btn btn-primary" id="quick-btn" title="הוספה">${ic('plus', 22)}</button>
     <button class="btn btn-ghost" id="btn-paste" title="הדבקת רשימה">${ic('clipboard', 20)}</button>
   </div>
+  ${orphans.length ? `
+    <button class="section-title orphan-toggle" id="toggle-orphans">
+      ${ic(SHOW_ORPHANS ? 'chevronDown' : 'folder', 18)} בלי פרויקט אב <span class="count">${orphans.length}</span>
+      <span class="tag t-peach">${ic('cornerDownLeft', 11)}לשייך</span>
+    </button>
+    ${SHOW_ORPHANS ? `
+      <div class="orphan-list">
+        ${orphans.map(t => `
+          <div class="card orphan-row" data-orphan="${t.id}">
+            <div class="orphan-main" data-edit="${t.id}">
+              <div class="task-title">${esc(t.title)}</div>
+              ${taskTags(t, { withProject: false }) ? `<div class="task-tags">${taskTags(t, { withProject: false })}</div>` : ''}
+            </div>
+            <select class="orphan-pick" data-adopt="${t.id}">
+              <option value="">— לשייך לפרויקט —</option>
+              ${DATA.projects.filter(p => ['active', 'someday'].includes(p.status))
+                .map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('')}
+            </select>
+          </div>`).join('')}
+      </div>` : ''}
+  ` : ''}
   ${groups.map(([st, label, icon]) => {
     const list = open.filter(t => t.status === st);
     if (!list.length) return '';
@@ -1679,13 +1735,17 @@ function bindMain() {
     e.stopPropagation();
     completeTask(+b.dataset.complete, b);
   });
+  // גרירת קו עיפרון למחיקה
+  $$('#main .task-card[data-task]').forEach(enableStrikeDelete);
   // עריכה
   $$('[data-edit]').forEach(el => el.onclick = () => openTaskSheet(+el.dataset.edit));
   // כוכב
   $$('[data-star]').forEach(b => b.onclick = e => {
     e.stopPropagation();
     const t = DATA.tasks.find(x => x.id == b.dataset.star);
-    updateTask(t.id, { is_next: t.is_next == 1 ? 0 : 1, status: t.is_next == 1 ? t.status : 'next' });
+    const turningOn = t.is_next != 1;
+    buzz(turningOn ? 10 : 5);
+    updateTask(t.id, { is_next: turningOn ? 1 : 0, status: turningOn ? 'next' : t.status });
   });
   // דחייה
   $$('[data-defer]').forEach(b => b.onclick = e => {
@@ -1714,6 +1774,20 @@ function bindMain() {
   // הדבקת רשימה
   const pb = $('#btn-paste');
   if (pb) pb.onclick = openPasteModal;
+  // משימות יתומות
+  const ot = $('#toggle-orphans');
+  if (ot) ot.onclick = () => { SHOW_ORPHANS = !SHOW_ORPHANS; render(); };
+  $$('[data-adopt]').forEach(sel => sel.onchange = async () => {
+    const pid = sel.value;
+    if (!pid) return;
+    const id = +sel.dataset.adopt;
+    const row = sel.closest('.orphan-row');
+    if (row) row.classList.add('adopted');
+    buzz(8);
+    await updateTask(id, { project_id: pid });
+    const p = DATA.projects.find(x => x.id == pid);
+    toast('שויכה ל' + (p ? p.name : 'פרויקט'));
+  });
   // פרויקטים
   $$('[data-toggle-project]').forEach(el => el.onclick = e => {
     if (e.target.closest('[data-edit-project]')) return;
@@ -1797,12 +1871,23 @@ async function updateTask(id, fields) {
   const t = DATA.tasks.find(x => x.id == id);
   const backup = { ...t };
   Object.assign(t, fields);
+  saveCache();
   render();
   try {
     const { task } = await api('task_update', { id, ...fields });
     Object.assign(t, task);
+    saveCache();
   } catch (e) {
+    // בלי רשת לא זורקים את השינוי — נכנס לתור ומסונכרן אחר כך, בדיוק כמו בהדרכות.
+    // קודם כל כישלון רשת החזיר את המצב אחורה והציג "לא נשמר", וזה מה שקרה בכוכב.
+    if (e.isNetwork) {
+      OFFLINE = true;
+      queuePush('task_update', { id, ...fields });
+      updateOfflineBadge();
+      return;
+    }
     Object.assign(t, backup);
+    saveCache();
     render();
     toast('אופס, לא נשמר — ' + e.message);
   }
@@ -1827,6 +1912,95 @@ async function completeTask(id, btn) {
       await api('task_complete', { id });
     } catch (e) { toast('אופס, לא נשמר — ' + e.message); await reload(); }
   }, 450);
+}
+
+/* ============ מחיקה בקו עיפרון ============ */
+/* גוררים אופקית על כרטיס משימה — נמתח קו עיפרון לרוחבו, ואם חוצים את הסף
+   המשימה נמחקת (עם ביטול בטוסט). רטט קצר מסמן את ההתחלה, החצייה והמחיקה. */
+
+function buzz(pattern) {
+  try { if (navigator.vibrate) navigator.vibrate(pattern); } catch (e) {}
+}
+
+const STRIKE_THRESHOLD = 0.55;   // חלק מרוחב הכרטיס שצריך לחצות
+
+function enableStrikeDelete(card) {
+  const id = +card.dataset.task;
+  if (!id) return;
+  let startX = 0, startY = 0, active = false, decided = false, line = null, crossed = false;
+
+  const cleanup = () => {
+    document.removeEventListener('pointermove', onMove);
+    document.removeEventListener('pointerup', onUp);
+    document.removeEventListener('pointercancel', onUp);
+    if (line) { line.remove(); line = null; }
+    card.classList.remove('striking', 'strike-armed');
+    active = false; decided = false; crossed = false;
+  };
+
+  const onMove = e => {
+    const dx = e.clientX - startX, dy = e.clientY - startY;
+    if (!decided) {
+      if (Math.abs(dx) < 12 && Math.abs(dy) < 12) return;
+      // מחליטים פעם אחת: תנועה אופקית = מחיקה, אנכית = גלילה רגילה
+      decided = true;
+      if (Math.abs(dx) < Math.abs(dy) * 1.3) { cleanup(); return; }
+      active = true;
+      card.classList.add('striking');
+      line = document.createElement('div');
+      line.className = 'strike-line';
+      card.appendChild(line);
+      buzz(6);
+    }
+    if (!active) return;
+    e.preventDefault();
+    const w = card.getBoundingClientRect().width;
+    const frac = Math.min(1, Math.abs(dx) / w);
+    line.style.width = (frac * 100) + '%';
+    // בעברית גוררים בדרך כלל שמאלה; הקו נמתח מהצד שממנו התחלנו
+    line.style.insetInlineStart = dx < 0 ? 'auto' : '0';
+    line.style.insetInlineEnd = dx < 0 ? '0' : 'auto';
+    const nowCrossed = frac >= STRIKE_THRESHOLD;
+    if (nowCrossed !== crossed) {
+      crossed = nowCrossed;
+      card.classList.toggle('strike-armed', crossed);
+      if (crossed) buzz(12);
+    }
+  };
+
+  const onUp = () => {
+    const didCross = crossed;
+    cleanup();
+    if (didCross) {
+      buzz([18, 40, 18]);
+      strikeDeleteTask(id, card);
+    }
+  };
+
+  card.addEventListener('pointerdown', e => {
+    // רק גרירה ישירה על הכרטיס — לא על הכפתורים שבתוכו
+    if (e.target.closest('button, a, select, input, textarea')) return;
+    startX = e.clientX; startY = e.clientY;
+    decided = false; active = false; crossed = false;
+    document.addEventListener('pointermove', onMove, { passive: false });
+    document.addEventListener('pointerup', onUp);
+    document.addEventListener('pointercancel', onUp);
+  });
+}
+
+/* מחיקה רכה: הג'סטה קלה לעשות בטעות, ולכן היא מעבירה ל-dropped (נעלם מכל
+   התצוגות אבל שמור) ולא מוחקת מהשרת. ביטול הוא פשוט החזרת הסטטוס הקודם. */
+async function strikeDeleteTask(id, card) {
+  const t = DATA.tasks.find(x => x.id == id);
+  if (!t) return;
+  const prevStatus = t.status;
+  if (card) card.classList.add('struck-out');
+  await new Promise(r => setTimeout(r, 240));
+  await updateTask(id, { status: 'dropped' });
+  toastActions('נמחקה', [{
+    label: 'ביטול',
+    fn: () => { buzz(6); updateTask(id, { status: prevStatus }); },
+  }]);
 }
 
 /* ---------- פופ־אובר דחייה ---------- */
@@ -2351,7 +2525,8 @@ function openPasteModal() {
 }
 
 function openProjectModal(id) {
-  const p = id ? DATA.projects.find(x => x.id == id) : { name: '', notes: '', color: PROJECT_COLORS[DATA.projects.length % PROJECT_COLORS.length], status: 'active' };
+  const p = id ? DATA.projects.find(x => x.id == id) : { name: '', notes: '', color: PROJECT_COLORS[DATA.projects.length % PROJECT_COLORS.length], status: 'active', active_days: '' };
+  const curDays = String(p.active_days || '').split(',').map(s => s.trim()).filter(s => s !== '');
   openModal(`
     <h3>${ic('folder', 20)} ${id ? 'עריכת פרויקט' : 'פרויקט חדש'}</h3>
     <div class="field"><input type="text" id="proj-name" placeholder="שם הפרויקט" value="${esc(p.name)}"></div>
@@ -2370,6 +2545,14 @@ function openProjectModal(id) {
         <button class="chip c-sky ${p.status === 'done' ? 'on' : ''}" data-pstatus="done">${ic('check', 14)}הושלם</button>
       </div>
     </div>
+    <div class="field">
+      <div class="field-label">${ic('calendar', 13)} באילו ימים הפרויקט אקטיבי</div>
+      <div class="chips day-chips">
+        ${DAY_SHORT.map((d, i) => `
+          <button class="chip c-lilac ${curDays.includes(String(i)) ? 'on' : ''}" data-pday="${i}">${d}</button>`).join('')}
+      </div>
+      <div class="day-hint" id="proj-day-hint"></div>
+    </div>
     <div class="sheet-actions">
       ${id ? `<button class="btn btn-danger" id="proj-archive" title="ארכיון">${ic('trash', 17)}</button>` : ''}
       <button class="btn btn-ghost" id="proj-cancel">ביטול</button>
@@ -2377,6 +2560,19 @@ function openProjectModal(id) {
     </div>`);
 
   let color = p.color, status = p.status;
+  let days = [...curDays];
+  const dayHint = () => {
+    $('#proj-day-hint').textContent = (days.length === 0 || days.length === 7)
+      ? 'בלי בחירה — הפרויקט אקטיבי בכל יום'
+      : 'בשאר הימים המשימות שלו לא יופיעו ב״עכשיו״';
+  };
+  dayHint();
+  $$('#modal [data-pday]').forEach(b => b.onclick = () => {
+    const d = b.dataset.pday;
+    days = days.includes(d) ? days.filter(x => x !== d) : days.concat(d);
+    b.classList.toggle('on', days.includes(d));
+    dayHint();
+  });
   $$('#modal [data-color]').forEach(b => b.onclick = () => {
     color = b.dataset.color;
     $$('#modal [data-color]').forEach(x => x.style.outline = x.dataset.color === color ? '3px solid var(--ink)' : 'none');
@@ -2389,7 +2585,9 @@ function openProjectModal(id) {
   $('#proj-save').onclick = async () => {
     const name = $('#proj-name').value.trim();
     if (!name) { $('#proj-name').focus(); return; }
-    const fields = { name, notes: $('#proj-notes').value.trim(), color, status };
+    // כל 7 הימים = כמו בלי הגבלה, שומרים ריק כדי שלא יהיה סינון מיותר
+    const fields = { name, notes: $('#proj-notes').value.trim(), color, status,
+                     active_days: days.length === 7 ? '' : days.slice().sort().join(',') };
     closeModal();
     try {
       if (id) await api('project_update', { id, ...fields });

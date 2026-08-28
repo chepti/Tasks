@@ -36,7 +36,7 @@ function fail($msg, $code = 400, $extra = []) { throw new ApiError($msg, $code, 
 function out($data) { echo json_encode($data, JSON_UNESCAPED_UNICODE); exit; }
 
 const TASK_FIELDS = ['title','notes','project_id','status','context','energy','size','is_next','due_date','snoozed_until','completed_at','sort_order'];
-const PROJECT_FIELDS = ['name','color','notes','status','sort_order'];
+const PROJECT_FIELDS = ['name','color','notes','status','sort_order','active_days'];
 const TRAINING_FIELDS = ['client_id','topic','place','mode','date','time_from','time_to',
     'contact_name','contact_phone','contact_email','contact_role',
     'pay_amount','pay_process','pay_received',
@@ -117,6 +117,10 @@ function helpDoc() {
             'followups' => 'JSON array [{"label":"...","done":0|1}] — the per-training follow-up checklist. Items can be removed or added freely (a physical session has no recording to send). Legacy fu_recording/fu_whatsapp/fu_takeaways are only a fallback for rows written before this field.',
             'notes' => 'free text', 'client_id' => 'optional client-generated id for idempotent offline sync',
         ],
+        'project_fields' => [
+            'name / notes / color / status' => 'basics; status = active | someday | done | archived',
+            'active_days' => 'which weekdays this project is live, as a comma list of day numbers (0=Sunday .. 6=Saturday), e.g. "0,2,4". Empty = always. On other days its tasks are hidden from the "now" screen, so day-bound projects stop crowding it.',
+        ],
         'targeting_a_task' => 'For update/complete/reopen/delete pass {"id":N} OR {"match":"substring of the title"}. If "match" is ambiguous you get HTTP 409 with a candidates list — refine or use the id.',
         'actions' => [
             'help'           => 'GET  — this document (no auth).',
@@ -133,6 +137,8 @@ function helpDoc() {
             'project_delete' => 'POST — { id } (archives it).',
             'training_upsert'=> 'POST — create/update a training session. Update by {id}, or by {client_id} if it exists, else insert. See training_fields.',
             'training_delete'=> 'POST — { id } (snapshot kept for restore).',
+            'orphans'        => 'GET  — open tasks that have no parent project, plus the project list to pick from.',
+            'adopt'          => 'POST — attach existing tasks to a parent project in bulk: { project:"name" | project_id:N, tasks:[ 12, 15, "substring of a title" ] }. Ids and title substrings can be mixed; anything ambiguous comes back under "problems" instead of failing the whole call.',
             'app_upsert'     => 'POST — app-idea container: { id?, name, notes?, color?, status? }.',
             'app_delete'     => 'POST — { id } (deletes its items too; snapshot kept).',
             'item_upsert'    => 'POST — one line inside an app: { id?, app_id, kind, title, body?, done? }. kind = heading | idea | feature | prompt. A "prompt" keeps its text in body. New items go to the end.',
@@ -269,6 +275,10 @@ $db->exec("CREATE TABLE IF NOT EXISTS projects (
     sort_order INTEGER DEFAULT 0,
     created_at TEXT DEFAULT (datetime('now'))
 )");
+// באילו ימים בשבוע הפרויקט אקטיבי — רשימת מספרי ימים (0=ראשון .. 6=שבת).
+// ריק = תמיד אקטיבי. בימים אחרים המשימות שלו לא מוצגות בתצוגת "עכשיו".
+try { $db->exec("ALTER TABLE projects ADD COLUMN active_days TEXT DEFAULT ''"); } catch (Throwable $e) { /* exists */ }
+
 $db->exec("CREATE TABLE IF NOT EXISTS tasks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     title TEXT NOT NULL,
@@ -973,6 +983,49 @@ function dispatch($db, $action, $data) {
         $st = $db->prepare("UPDATE app_items SET sort_order = ? WHERE id = ?");
         foreach (array_values($ids) as $i => $itemId) $st->execute([$i + 1, (int)$itemId]);
         return ['ok' => true, 'count' => count($ids)];
+    }
+
+    /* משימות יתומות — נכנסו בדרכים שונות בלי פרויקט אב */
+    case 'orphans': {
+        $rows = $db->query("SELECT * FROM tasks
+                            WHERE (project_id IS NULL OR project_id = '' OR project_id = 0)
+                              AND status NOT IN ('done','dropped')
+                            ORDER BY id DESC")->fetchAll(PDO::FETCH_ASSOC);
+        $projMap = projectMap($db);
+        return [
+            'count' => count($rows),
+            'tasks' => array_map(function ($t) use ($projMap) { return compactTask($t, $projMap); }, $rows),
+            'projects' => $db->query("SELECT id, name FROM projects WHERE status != 'archived' ORDER BY sort_order, id")->fetchAll(PDO::FETCH_ASSOC),
+        ];
+    }
+
+    /* שיוך משימות קיימות לפרויקט אב — בכמות, לפי id או לפי כותרת */
+    case 'adopt': {
+        $target = $data;
+        resolveProjectInto($db, $target);          // תומך ב-{"project":"שם"} וגם ביצירה
+        $projectId = (int)($target['project_id'] ?? 0);
+        if (!$projectId) fail('project or project_id required');
+        rowOrFail($db, 'projects', $projectId);
+
+        $wanted = $data['tasks'] ?? $data['ids'] ?? [];
+        if (!is_array($wanted) || !$wanted) fail('tasks array required (ids or title substrings)');
+
+        $st = $db->prepare("UPDATE tasks SET project_id = ?, updated_at = datetime('now') WHERE id = ?");
+        $moved = []; $problems = [];
+        foreach ($wanted as $w) {
+            try {
+                $tid = is_numeric($w) ? (int)$w : resolveTaskId($db, ['match' => (string)$w], 'any');
+                $before = rowOrFail($db, 'tasks', $tid);
+                $st->execute([$projectId, $tid]);
+                logHistory($db, 'task', $tid, 'update', $before);
+                $moved[] = ['id' => $tid, 'title' => $before['title']];
+            } catch (ApiError $e) {
+                $problems[] = array_merge(['input' => $w, 'error' => $e->getMessage()], $e->extra);
+            }
+        }
+        $out = ['project_id' => $projectId, 'moved' => count($moved), 'tasks' => $moved];
+        if ($problems) $out['problems'] = $problems;
+        return $out;
     }
 
     case 'task_create':
