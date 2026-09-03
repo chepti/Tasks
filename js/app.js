@@ -112,6 +112,7 @@ let SHOW_DONE_ITEMS = new Set();  // באילו אפליקציות מוצגים 
 let EXPANDED_PROMPTS = new Set(); // פרומפטים ארוכים שנפרשו במלואם
 let SHOW_DONE_APPS = false;       // האם להציג את האפליקציות שהושלמו
 let SHOW_ORPHANS = false;         // האם לפתוח את רשימת המשימות בלי פרויקט אב
+let SHOW_DONE_TASKS = new Set();  // באילו פרויקטים מוצגות גם המשימות שבוצעו
 let IDEAS_SEARCH = '';            // חיפוש חופשי ברעיונות ובפרומפטים
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -177,25 +178,54 @@ function queuePush(action, body) {
 }
 
 let FLUSHING = false;
-async function flushQueue() {
-  if (FLUSHING) return;
+/* פריטים שנכשלו מסיבה שאינה רשת נשמרים בצד ולא נזרקים — קודם הם נמחקו
+   בשקט, וזה אבד תוכן. הם מוצגים בפאנל הסנכרון ואפשר לנסות שוב או להסיר. */
+function failedQueue() {
+  try { return JSON.parse(localStorage.getItem('tasks_failed') || '[]'); } catch (e) { return []; }
+}
+function setFailedQueue(q) {
+  try { localStorage.setItem('tasks_failed', JSON.stringify(q)); } catch (e) {}
+  updateOfflineBadge();
+}
+
+/** מסנכרן את התור. מחזיר סיכום כדי שהפאנל יוכל להציג מה בדיוק קרה. */
+async function flushQueue(opts) {
+  const verbose = opts && opts.verbose;
+  if (FLUSHING) return { skipped: 'כבר מסנכרן' };
   let q = pendingQueue();
-  if (!q.length) return;
+  if (!q.length) return { sent: 0, left: 0 };
   FLUSHING = true;
+  let sent = 0, lastError = null, networkStop = false;
+  const failed = failedQueue();
   try {
     while (q.length) {
+      const item = q[0];
       try {
-        await api(q[0].action, q[0].body);
+        await api(item.action, item.body);
         q.shift();
         setPendingQueue(q);
+        sent++;
       } catch (e) {
-        if (e.isNetwork) return;   // עדיין אין רשת — ננסה שוב אחר כך
-        q.shift();                 // בקשה פגומה — לא לחסום את התור
+        item.tries = (item.tries || 0) + 1;
+        item.err = e.message || 'שגיאה';
+        item.errAt = Date.now();
+        if (e.isNetwork) {
+          // אין רשת — עוצרים ומשאירים הכל בתור לניסיון הבא
+          lastError = 'אין חיבור לשרת';
+          networkStop = true;
+          setPendingQueue(q);
+          break;
+        }
+        // כשל אמיתי מהשרת: מעבירים לצד כדי שהתור יתקדם, אבל שומרים את התוכן
+        lastError = item.err;
+        failed.push(q.shift());
         setPendingQueue(q);
+        setFailedQueue(failed);
       }
     }
-    await reload();
-    toast('סונכרן! הכל נשמר בשרת');
+    if (sent) { await reload(); }
+    if (sent && !q.length && !verbose) toast('סונכרן! הכל נשמר בשרת');
+    return { sent, left: q.length, failed: failed.length, lastError, networkStop };
   } finally {
     FLUSHING = false;
     updateOfflineBadge();
@@ -206,12 +236,128 @@ function updateOfflineBadge() {
   const el = $('#offline-badge');
   if (!el) return;
   const pending = pendingQueue().length;
-  if (OFFLINE || pending) {
+  const failed = failedQueue().length;
+  if (OFFLINE || pending || failed) {
     el.classList.remove('hidden');
-    el.innerHTML = `${ic('cloudOff', 13)} ${pending ? `ממתין לסנכרון (${pending})` : 'אופליין'}`;
+    el.classList.toggle('has-failed', failed > 0);
+    const label = failed && !pending ? `${failed} לא נשמרו`
+      : pending ? `ממתין לסנכרון (${pending}${failed ? '+' + failed : ''})`
+      : 'אופליין';
+    el.innerHTML = `${ic('cloudOff', 13)} ${label}`;
+    el.title = 'לחיצה — לנסות לסנכרן שוב ולראות פרטים';
   } else {
     el.classList.add('hidden');
+    el.classList.remove('has-failed');
   }
+}
+
+/* ---------- פאנל סנכרון ואבחון ---------- */
+
+/** תיאור קריא של בקשה שמחכה בתור, כולל התוכן שנשמר בה. */
+function describeQueued(item) {
+  const b = item.body || {};
+  const taskTitle = id => {
+    const t = DATA.tasks.find(x => x.id == id);
+    return t ? t.title : '#' + id;
+  };
+  const fieldNames = {
+    notes: 'הערות', title: 'כותרת', due_date: 'תאריך יעד', status: 'סטטוס',
+    context: 'הקשר', energy: 'אנרגיה', size: 'גודל', is_next: 'כוכב',
+    project_id: 'פרויקט', followups: 'פעולות משלימות', done: 'בוצע',
+    topic: 'נושא', place: 'מקום', audience: 'קהל', ideas: 'רעיונות',
+    message: 'מסר', pay_amount: 'סכום', pay_process: 'תהליך תשלום',
+    contact_name: 'איש קשר', body: 'תוכן', active_days: 'ימים',
+  };
+  const parts = [];
+  Object.entries(b).forEach(([k, v]) => {
+    if (['id', 'client_id', 'ops'].includes(k)) return;
+    if (v === '' || v === null || v === undefined) return;
+    const label = fieldNames[k] || k;
+    parts.push(`${label}: ${String(v).slice(0, 300)}`);
+  });
+  let what;
+  if (item.action === 'task_update') what = 'עדכון משימה — ' + taskTitle(b.id);
+  else if (item.action === 'task_delete') what = 'מחיקת משימה — ' + taskTitle(b.id);
+  else if (item.action === 'training_upsert') what = 'שמירת הדרכה' + (b.topic ? ' — ' + b.topic : '');
+  else if (item.action === 'item_upsert') what = 'שמירת שורת רעיון';
+  else if (item.action === 'ops') what = `אצווה של ${(b.ops || []).length} פעולות`;
+  else what = item.action;
+  return { what, detail: parts.join(' · '), when: item.ts ? timeAgo(new Date(item.ts).toISOString().slice(0, 19).replace('T', ' ')) : '' };
+}
+
+async function openSyncModal() {
+  const render_ = (summary) => {
+    const q = pendingQueue(), f = failedQueue();
+    const drafts = Object.keys(localStorage).filter(k => k.startsWith('tasks_formdraft_'));
+    const rowFor = (item, i, kind) => {
+      const d = describeQueued(item);
+      return `
+      <div class="sync-row ${kind}">
+        <div class="sync-main">
+          <div class="sync-what">${esc(d.what)}</div>
+          ${d.detail ? `<div class="sync-detail">${esc(d.detail)}</div>` : ''}
+          <div class="sync-meta">
+            ${d.when ? esc(d.when) : ''}
+            ${item.tries ? ` · ${item.tries} נסיונות` : ''}
+            ${item.err ? ` · <span class="sync-err">${esc(item.err)}</span>` : ''}
+          </div>
+        </div>
+        <button class="icon-btn" data-sync-copy="${kind}:${i}" title="העתקת התוכן">${ic('copy', 15)}</button>
+        <button class="icon-btn" data-sync-drop="${kind}:${i}" title="להסיר מהתור">${ic('x', 15)}</button>
+      </div>`;
+    };
+    openModal(`
+      <h3>${ic('refresh', 20)} סנכרון</h3>
+      ${summary ? `<div class="sync-summary ${summary.ok ? 'ok' : 'bad'}">${esc(summary.text)}</div>` : ''}
+      ${!q.length && !f.length ? `
+        <div class="gs-hint">${ic('check', 34)}<p>הכל מסונכרן — אין מה שממתין</p></div>` : ''}
+      ${q.length ? `
+        <div class="sheet-section">${ic('cloudOff', 15)} ממתין לשליחה (${q.length})</div>
+        ${q.map((it, i) => rowFor(it, i, 'pending')).join('')}` : ''}
+      ${f.length ? `
+        <div class="sheet-section">${ic('x', 15)} נכשלו (${f.length})</div>
+        <p style="color:var(--ink-soft);font-size:.83rem;margin-bottom:8px">התוכן נשמר כאן כדי שלא ילך לאיבוד. אפשר להעתיק אותו, לנסות שוב, או להסיר.</p>
+        ${f.map((it, i) => rowFor(it, i, 'failed')).join('')}` : ''}
+      ${drafts.length ? `
+        <div class="sheet-section">${ic('pencil', 15)} טיוטות מקומיות (${drafts.length})</div>
+        <p style="color:var(--ink-soft);font-size:.83rem">יש טופס עם תוכן שלא נשמר. פתיחת אותה משימה או הדרכה תציע לשחזר אותו.</p>` : ''}
+      <div class="sheet-actions">
+        <button class="btn btn-primary" id="sync-retry" style="flex:1">${ic('refresh', 16)} לנסות לסנכרן עכשיו</button>
+        <button class="btn btn-ghost" id="sync-close">סגירה</button>
+      </div>`);
+
+    $('#sync-close').onclick = closeModal;
+    $('#sync-retry').onclick = async () => {
+      $('#sync-retry').textContent = 'מסנכרן...';
+      const before = pendingQueue().length;
+      const res = await flushQueue({ verbose: true });
+      let text, ok = false;
+      if (res.skipped) text = 'סנכרון כבר רץ ברקע, רגע אחד';
+      else if (res.sent && !res.left) { text = `נשלחו ${res.sent} — הכל מסונכרן`; ok = true; }
+      else if (res.sent) text = `נשלחו ${res.sent}, נשארו ${res.left}. ${res.lastError || ''}`;
+      else if (res.networkStop) text = 'השרת לא עונה. ' + (res.lastError || '');
+      else if (res.lastError) text = 'השרת דחה את הבקשה: ' + res.lastError;
+      else if (!before) { text = 'אין מה לסנכרן'; ok = true; }
+      else text = 'לא נשלח כלום';
+      render_({ text, ok });
+    };
+    $$('#modal [data-sync-copy]').forEach(b => b.onclick = () => {
+      const [kind, i] = b.dataset.syncCopy.split(':');
+      const list = kind === 'pending' ? pendingQueue() : failedQueue();
+      const item = list[+i];
+      const d = describeQueued(item);
+      copyText(d.what + '\n' + d.detail);
+    });
+    $$('#modal [data-sync-drop]').forEach(b => b.onclick = () => {
+      const [kind, i] = b.dataset.syncDrop.split(':');
+      if (kind === 'pending') { const l = pendingQueue(); l.splice(+i, 1); setPendingQueue(l); }
+      else { const l = failedQueue(); l.splice(+i, 1); setFailedQueue(l); }
+      render_();
+    });
+  };
+  render_();
+  // מנסים מיד — הרי בשביל זה נכנסים לכאן
+  $('#sync-retry').click();
 }
 
 /* ---------- זמנים ---------- */
@@ -506,7 +652,9 @@ function renderProjects() {
   const projCard = p => {
     const tasks = DATA.tasks.filter(t => t.project_id == p.id && !['dropped', 'draft'].includes(t.status));
     const open = tasks.filter(t => t.status !== 'done');
-    const done = tasks.length - open.length;
+    const doneList = tasks.filter(t => t.status === 'done')
+      .sort((a, b) => String(b.completed_at || '').localeCompare(String(a.completed_at || '')));
+    const done = doneList.length;
     const pct = tasks.length ? Math.round(done / tasks.length * 100) : 0;
     const isOpen = OPEN_PROJECTS.has(p.id);
     const next = open.find(t => t.is_next == 1);
@@ -536,6 +684,24 @@ function renderProjects() {
           <input type="text" placeholder="משימה חדשה לפרויקט..." data-project-input="${p.id}">
           <button class="btn btn-ghost" data-project-addbtn="${p.id}">${ic('plus', 18)}</button>
         </div>
+        ${doneList.length ? `
+          <button class="done-toggle" data-toggle-pdone="${p.id}">
+            ${ic('chevronDown', 15)} בוצעו <span class="count">${doneList.length}</span>
+          </button>
+          ${SHOW_DONE_TASKS.has(p.id) ? `
+            <div class="project-tasks done-list">
+              ${doneList.map(t => {
+                const d = parseUTC(t.completed_at);
+                return `
+                <div class="win-card">
+                  <span class="win-check">${ic('check', 16)}</span>
+                  <span class="win-title done-text">${esc(t.title)}</span>
+                  ${d ? `<span class="win-time">${dayLabel(localDateStr(d))}</span>` : ''}
+                  <button class="win-undo" data-reopen="${t.id}" title="החזרה לרשימה">${ic('rotateCcw', 15)}</button>
+                </div>`;
+              }).join('')}
+            </div>` : ''}
+        ` : ''}
       ` : ''}
     </div>`;
   };
@@ -1799,6 +1965,12 @@ function bindMain() {
     e.stopPropagation();
     openProjectModal(+b.dataset.editProject);
   });
+  $$('[data-toggle-pdone]').forEach(b => b.onclick = e => {
+    e.stopPropagation();
+    const id = +b.dataset.togglePdone;
+    SHOW_DONE_TASKS.has(id) ? SHOW_DONE_TASKS.delete(id) : SHOW_DONE_TASKS.add(id);
+    render();
+  });
   $$('[data-project-addbtn]').forEach(b => b.onclick = () => addProjectTask(+b.dataset.projectAddbtn));
   $$('[data-project-input]').forEach(inp => inp.onkeydown = e => {
     if (e.key === 'Enter') addProjectTask(+inp.dataset.projectInput);
@@ -2872,6 +3044,14 @@ $('#login-form').onsubmit = async e => {
 
 $('#fab').onclick = () => openTaskSheet(null);
 $('#fab').innerHTML = ic('plus', 26);
+$('#offline-badge').onclick = openSyncModal;
+// ניסיון חוזר תקופתי — קודם התור נשאר תקוע עד שהמשתמשת החליפה טאב
+setInterval(() => {
+  if (KEY && !$('#app').classList.contains('hidden') && pendingQueue().length) {
+    flushQueue().catch(() => {});
+  }
+}, 60000);
+
 $('#btn-search').innerHTML = ic('search', 19);
 $('#btn-search').onclick = openSearchModal;
 $('#btn-history').innerHTML = ic('history', 19);

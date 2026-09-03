@@ -326,7 +326,8 @@ button.chip:hover { transform: translateY(-1px); border-color: var(--ink-soft); 
 
 .task-body { flex: 1; min-width: 0; }
 .task-title { font-size: 1rem; line-height: 1.35; word-break: break-word; }
-.task-title.done-text { text-decoration: line-through; color: var(--ink-soft); }
+/* עומד בפני עצמו כדי שיחול גם על שורות "בוצעו" בתוך פרויקט, לא רק על כרטיס משימה */
+.done-text { text-decoration: line-through; color: var(--ink-soft); }
 .task-notes { font-size: .82rem; color: var(--ink-soft); margin-top: 3px; white-space: pre-line; }
 .task-tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
 
@@ -610,12 +611,46 @@ button.chip:hover { transform: translateY(-1px); border-color: var(--ink-soft); 
 .offline-badge {
   display: inline-flex; align-items: center; gap: 5px;
   background: var(--peach-soft); color: #C77518;
+  border: 2px solid transparent;
   border-radius: var(--r-pill);
   padding: 4px 12px;
   font-size: .72rem; font-weight: 600;
   margin-inline-start: 10px;
   vertical-align: middle;
+  cursor: pointer;
+  transition: all .15s;
 }
+.offline-badge:hover { border-color: var(--peach); transform: translateY(-1px); }
+.offline-badge.has-failed { background: var(--coral-soft); color: #C43A28; }
+.offline-badge.has-failed:hover { border-color: var(--coral); }
+
+/* פאנל סנכרון */
+.sync-summary {
+  border-radius: 14px; padding: 10px 14px; margin-bottom: 12px;
+  font-size: .88rem; font-weight: 600;
+}
+.sync-summary.ok { background: var(--teal-soft); color: #12907B; }
+.sync-summary.bad { background: var(--coral-soft); color: #C43A28; }
+.sync-row {
+  display: flex; align-items: flex-start; gap: 8px;
+  padding: 9px 10px; margin-bottom: 6px;
+  border-radius: 14px;
+  background: var(--bg-soft);
+  border-inline-start: 3px solid var(--peach);
+}
+.sync-row.failed { background: var(--coral-soft); border-inline-start-color: var(--coral); }
+.sync-main { flex: 1; min-width: 0; }
+.sync-what { font-weight: 600; font-size: .9rem; }
+.sync-detail {
+  font-size: .82rem; color: var(--ink); margin-top: 3px;
+  white-space: pre-wrap; word-break: break-word;
+}
+.sync-meta { font-size: .74rem; color: var(--ink-soft); margin-top: 4px; }
+.sync-err { color: #C43A28; font-weight: 600; }
+.sync-row .icon-btn { width: 30px; height: 30px; box-shadow: none; background: rgba(255,255,255,.7); flex-shrink: 0; }
+
+/* משימות שבוצעו בתוך פרויקט */
+.project-tasks.done-list { opacity: .8; margin-top: 6px; }
 
 .training-strip {
   display: flex; align-items: center; gap: 10px;

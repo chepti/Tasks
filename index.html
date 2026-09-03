@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Varela+Round&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=17">
+<link rel="stylesheet" href="css/style.css?v=18">
 </head>
 <body>
 
@@ -38,7 +38,7 @@
   <header class="topbar">
     <div class="topbar-title">
       <span id="greeting">בוקר טוב</span>
-      <span id="offline-badge" class="offline-badge hidden"></span>
+      <button id="offline-badge" class="offline-badge hidden" type="button"></button>
     </div>
     <nav class="topnav" id="topnav"></nav>
     <div class="topbar-actions">
@@ -67,7 +67,7 @@
 <div id="toast" class="toast hidden"></div>
 <canvas id="confetti-canvas"></canvas>
 
-<script src="js/app.js?v=17"></script>
+<script src="js/app.js?v=18"></script>
 <script>
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js').catch(function(){});
