@@ -9,7 +9,6 @@
 <Files "sw.js">
   <IfModule mod_headers.c>
     Header set Cache-Control "no-cache, must-revalidate"
-    Header set Service-Worker-Allowed "/"
   </IfModule>
 </Files>
 

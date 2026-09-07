@@ -1976,18 +1976,35 @@ function bindMain() {
     completeTask(+b.dataset.complete, b);
   });
   // גרירת קו עיפרון למחיקה (+ לחיצה-ארוכה לבחירה מרובה)
-  $$('#main .task-card[data-task]').forEach(enableStrikeDelete);
-  // עריכה — לחיצה רגילה פותחת גיליון; Ctrl/Shift או מצב בחירה = סימון
-  $$('[data-edit]').forEach(el => el.onclick = e => {
-    const id = +el.dataset.edit;
-    if (suppressTaskClick) { e.preventDefault(); e.stopPropagation(); return; }
-    if (SELECT_MODE || e.shiftKey || e.ctrlKey || e.metaKey) {
-      e.preventDefault();
-      e.stopPropagation();
-      toggleSelected(id);
-      return;
-    }
-    openTaskSheet(id);
+  // לחיצה על הכרטיס עצמו פותחת עריכה — אמין יותר מ-[data-edit] כשיש pointer capture
+  $$('#main .task-card[data-task]').forEach(card => {
+    enableStrikeDelete(card);
+    card.addEventListener('click', e => {
+      if (e.target.closest('button, a, select, input, textarea')) return;
+      if (suppressTaskClick) { e.preventDefault(); return; }
+      const id = +card.dataset.task;
+      if (SELECT_MODE || e.shiftKey || e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        toggleSelected(id);
+        return;
+      }
+      openTaskSheet(id);
+    });
+  });
+  // עריכה ליסודות בלי כרטיס (יתומות וכו')
+  $$('[data-edit]').forEach(el => {
+    if (el.closest('.task-card[data-task]')) return;
+    el.onclick = e => {
+      const id = +el.dataset.edit;
+      if (suppressTaskClick) { e.preventDefault(); e.stopPropagation(); return; }
+      if (SELECT_MODE || e.shiftKey || e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        toggleSelected(id);
+        return;
+      }
+      openTaskSheet(id);
+    };
   });
   // כוכב
   $$('[data-star]').forEach(b => b.onclick = e => {
@@ -3407,16 +3424,19 @@ setInterval(() => {
 
 $('#btn-search').innerHTML = ic('search', 19);
 $('#btn-search').onclick = openSearchModal;
-$('#btn-select').innerHTML = ic('checkSquare', 19);
-$('#btn-select').onclick = () => { SELECT_MODE ? exitSelect() : enterSelectMode(); };
-$('#bulk-complete').innerHTML = ic('check', 16) + ' בוצע';
-$('#bulk-edit').innerHTML = ic('settings', 16) + ' הגדרות';
-$('#bulk-drop').innerHTML = ic('trash', 16);
-$('#bulk-cancel').innerHTML = ic('x', 16);
-$('#bulk-complete').onclick = bulkComplete;
-$('#bulk-edit').onclick = openBulkEditModal;
-$('#bulk-drop').onclick = bulkDrop;
-$('#bulk-cancel').onclick = exitSelect;
+const btnSelect = $('#btn-select');
+if (btnSelect) {
+  btnSelect.innerHTML = ic('checkSquare', 19);
+  btnSelect.onclick = () => { SELECT_MODE ? exitSelect() : enterSelectMode(); };
+}
+const bulkCompleteBtn = $('#bulk-complete');
+const bulkEditBtn = $('#bulk-edit');
+const bulkDropBtn = $('#bulk-drop');
+const bulkCancelBtn = $('#bulk-cancel');
+if (bulkCompleteBtn) { bulkCompleteBtn.innerHTML = ic('check', 16) + ' בוצע'; bulkCompleteBtn.onclick = bulkComplete; }
+if (bulkEditBtn) { bulkEditBtn.innerHTML = ic('settings', 16) + ' הגדרות'; bulkEditBtn.onclick = openBulkEditModal; }
+if (bulkDropBtn) { bulkDropBtn.innerHTML = ic('trash', 16); bulkDropBtn.onclick = bulkDrop; }
+if (bulkCancelBtn) { bulkCancelBtn.innerHTML = ic('x', 16); bulkCancelBtn.onclick = exitSelect; }
 $('#btn-history').innerHTML = ic('history', 19);
 $('#btn-history').onclick = openHistoryModal;
 $('#btn-settings').innerHTML = ic('settings', 19);
