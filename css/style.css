@@ -372,7 +372,14 @@ button.chip:hover { transform: translateY(-1px); border-color: var(--ink-soft); 
 /* עומד בפני עצמו כדי שיחול גם על שורות "בוצעו" בתוך פרויקט, לא רק על כרטיס משימה */
 .done-text { text-decoration: line-through; color: var(--ink-soft); }
 .task-notes { font-size: .82rem; color: var(--ink-soft); margin-top: 3px; white-space: pre-line; }
-.task-tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+.task-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin-top: 8px; }
+.tag-sep {
+  color: var(--ink-faint);
+  font-weight: 400;
+  padding: 0 3px;
+  font-size: .85rem;
+  line-height: 1;
+}
 
 .task-side { display: flex; flex-direction: column; align-items: center; gap: 6px; }
 
@@ -1208,6 +1215,14 @@ button.chip:hover { transform: translateY(-1px); border-color: var(--ink-soft); 
 .app-notes {
   color: var(--ink-soft); font-size: .85rem;
   margin: 10px 0 4px; padding-inline-start: 24px;
+}
+.ideas-hint {
+  color: var(--ink-soft);
+  font-size: .82rem;
+  margin: -4px 4px 12px;
+}
+.project-card.is-idea {
+  background: linear-gradient(180deg, #fff, var(--peach-soft));
 }
 
 .item-list { margin-top: 8px; display: flex; flex-direction: column; }

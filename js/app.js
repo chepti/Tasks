@@ -62,6 +62,7 @@ function ic(name, size = 20) {
     search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
     cornerDownLeft: '<path d="M20 4v7a4 4 0 0 1-4 4H4"/><polyline points="9 10 4 15 9 20"/>',
     checkSquare: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="m9 12 2 2 4-4"/>',
+    ban: '<circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/>',
   };
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${paths[name] || ''}</svg>`;
 }
@@ -85,11 +86,12 @@ const SIZE = {
   big:    { label: 'גדול',  icon: 'hourglass', color: 'rose',  rank: 3 },
 };
 const STATUS = {
-  inbox:   { label: 'מלאי',      color: 'gray' },
-  next:    { label: 'הבא בתור',  color: 'coral' },
-  waiting: { label: 'ממתין',     color: 'peach' },
-  someday: { label: 'מתישהו',    color: 'lilac' },
-  done:    { label: 'בוצע',      color: 'teal' },
+  inbox:   { label: 'מלאי',         color: 'gray' },
+  next:    { label: 'הבא בתור',     color: 'coral' },
+  waiting: { label: 'ממתין',        color: 'peach' },
+  someday: { label: 'מתישהו',       color: 'lilac' },
+  never:   { label: 'כבר לא יקרה',  color: 'rose' },
+  done:    { label: 'בוצע',         color: 'teal' },
 };
 const PROJECT_COLORS = ['#FF7B6B','#2FBFA7','#9B8CFF','#5BB8F5','#FFB25E','#F56BA0','#7BC96F','#E0B252'];
 
@@ -114,6 +116,7 @@ let EXPANDED_PROMPTS = new Set(); // פרומפטים ארוכים שנפרשו 
 let SHOW_DONE_APPS = false;       // האם להציג את האפליקציות שהושלמו
 let SHOW_ORPHANS = false;         // האם לפתוח את רשימת המשימות בלי פרויקט אב
 let SHOW_DONE_TASKS = new Set();  // באילו פרויקטים מוצגות גם המשימות שבוצעו
+let SHOW_NEVER_TASKS = new Set(); // באילו פרויקטים מוצגות משימות "כבר לא יקרה"
 let IDEAS_SEARCH = '';            // חיפוש חופשי ברעיונות ובפרומפטים
 let SELECT_MODE = false;          // בחירה מרובה של משימות
 let SELECTING = new Set();        // מזהי המשימות שנבחרו
@@ -407,9 +410,21 @@ function timeAgo(s) {
 
 /* ---------- עזרי נתונים ---------- */
 function projectOf(t) { return DATA.projects.find(p => p.id == t.project_id) || null; }
+/* פרויקט במצב רעיון / כבר-לא-יקרה / הושלם — המשימות שלו לא עולות ל״עכשיו״ ול״הכל״.
+   מגיעים אליהן רק מתוך כרטיס הפרויקט. */
+function projectHidesLists(p) {
+  return p && ['idea', 'never', 'done', 'archived'].includes(p.status);
+}
+function liveProjects() {
+  return DATA.projects.filter(p => ['active', 'someday', 'idea'].includes(p.status));
+}
 function openTasks() {
   // 'draft' = נקלט אוטומטית וממתין לאישור — לא נחשב משימה פעילה עד שמאשרים
-  return DATA.tasks.filter(t => !['done', 'dropped', 'draft'].includes(t.status));
+  return DATA.tasks.filter(t => {
+    if (['done', 'dropped', 'draft', 'never'].includes(t.status)) return false;
+    if (projectHidesLists(projectOf(t))) return false;
+    return true;
+  });
 }
 function draftTasks() { return DATA.tasks.filter(t => t.status === 'draft'); }
 function isSnoozed(t) {
@@ -511,29 +526,33 @@ function render() {
 
 /* ---------- כרטיס משימה ---------- */
 function taskTags(t, { withProject = true } = {}) {
-  const tags = [];
+  const project = [];
+  const rest = [];
   const p = withProject ? projectOf(t) : null;
-  if (p) tags.push(`<span class="tag t-gray" style="background:${p.color}22;color:${p.color}">${ic('folder', 11)}${esc(p.name)}</span>`);
+  if (p) project.push(`<span class="tag t-gray" style="background:${p.color}22;color:${p.color}">${ic('folder', 11)}${esc(p.name)}</span>`);
   if (t.context && CONTEXTS[t.context]) {
     const c = CONTEXTS[t.context];
-    tags.push(`<span class="tag t-${c.color}">${ic(c.icon, 11)}${c.label}</span>`);
+    rest.push(`<span class="tag t-${c.color}">${ic(c.icon, 11)}${c.label}</span>`);
   }
   if (t.energy && ENERGY[t.energy]) {
     const e = ENERGY[t.energy];
-    tags.push(`<span class="tag t-${e.color}">${ic(e.icon, 11)}${e.short}</span>`);
+    rest.push(`<span class="tag t-${e.color}">${ic(e.icon, 11)}${e.short}</span>`);
   }
   if (t.size && SIZE[t.size]) {
     const s = SIZE[t.size];
-    tags.push(`<span class="tag t-${s.color}">${ic(s.icon, 11)}${s.label}</span>`);
+    rest.push(`<span class="tag t-${s.color}">${ic(s.icon, 11)}${s.label}</span>`);
   }
   if (t.due_date) {
     const overdue = t.due_date < todayStr();
-    tags.push(`<span class="tag ${overdue ? 't-coral' : 't-gray'}">${ic('calendar', 11)}${dayLabel(t.due_date)}</span>`);
+    rest.push(`<span class="tag ${overdue ? 't-coral' : 't-gray'}">${ic('calendar', 11)}${dayLabel(t.due_date)}</span>`);
   }
-  if (isSnoozed(t)) tags.push(`<span class="tag t-lilac">${ic('moon', 11)}נדחה</span>`);
-  if (t.status === 'waiting') tags.push(`<span class="tag t-peach">${ic('hourglass', 11)}ממתין</span>`);
-  if (t.status === 'someday') tags.push(`<span class="tag t-lilac">${ic('cloudSun', 11)}מתישהו</span>`);
-  return tags.join('');
+  if (isSnoozed(t)) rest.push(`<span class="tag t-lilac">${ic('moon', 11)}נדחה</span>`);
+  if (t.status === 'waiting') rest.push(`<span class="tag t-peach">${ic('hourglass', 11)}ממתין</span>`);
+  if (t.status === 'someday') rest.push(`<span class="tag t-lilac">${ic('cloudSun', 11)}מתישהו</span>`);
+  if (t.status === 'never') rest.push(`<span class="tag t-rose">${ic('ban', 11)}כבר לא יקרה</span>`);
+  if (!project.length) return rest.join('');
+  if (!rest.length) return project.join('');
+  return project.join('') + '<span class="tag-sep" aria-hidden="true">|</span>' + rest.join('');
 }
 
 function taskCard(t, { defer = false, withProject = true } = {}) {
@@ -568,9 +587,11 @@ function projectActiveToday(t) {
 }
 
 function nowMatches(t) {
-  if (['done', 'dropped', 'draft', 'someday', 'waiting'].includes(t.status)) return false;
+  if (['done', 'dropped', 'draft', 'someday', 'waiting', 'never'].includes(t.status)) return false;
   if (isSnoozed(t)) return false;
-  // כוכב = "ממש לעכשיו", ולכן עוקף את סינון הימים ואת הסינון הידני
+  const p = projectOf(t);
+  if (projectHidesLists(p)) return false;
+  // כוכב = "ממש לעכשיו", ולכן עוקף את סינון הימים ואת הסינון הידני — אבל לא פרויקט-רעיון
   if (t.is_next == 1) return true;
   if (!projectActiveToday(t)) return false;
   const f = NOW_FILTER;
@@ -599,7 +620,8 @@ function renderNow() {
   // כמה הוסתרו כי הפרויקט שלהן לא אקטיבי היום — כדי שלא יהיה תחושה שדברים נעלמו
   const hiddenByDay = open.filter(t =>
     t.is_next != 1 && !isSnoozed(t) &&
-    !['done', 'dropped', 'draft', 'someday', 'waiting'].includes(t.status) &&
+    !['done', 'dropped', 'draft', 'someday', 'waiting', 'never'].includes(t.status) &&
+    !projectHidesLists(projectOf(t)) &&
     !projectActiveToday(t)).length;
 
   const filtersOn = f.context || f.energy || f.size;
@@ -650,78 +672,102 @@ function renderNow() {
   `)}`;
 }
 
+/* ---------- כרטיס פרויקט (משותף לפרויקטים ולרעיונות) ---------- */
+function projectCard(p) {
+  const tasks = DATA.tasks.filter(t => t.project_id == p.id && !['dropped', 'draft'].includes(t.status));
+  const open = tasks.filter(t => t.status !== 'done' && t.status !== 'never');
+  const neverList = tasks.filter(t => t.status === 'never');
+  const doneList = tasks.filter(t => t.status === 'done')
+    .sort((a, b) => String(b.completed_at || '').localeCompare(String(a.completed_at || '')));
+  const done = doneList.length;
+  const pct = tasks.length ? Math.round(done / tasks.length * 100) : 0;
+  const isOpen = OPEN_PROJECTS.has(p.id);
+  const next = open.find(t => t.is_next == 1);
+  const pDays = String(p.active_days || '').split(',').map(s => s.trim()).filter(s => s !== '');
+  const pActiveToday = !pDays.length || pDays.includes(String(new Date().getDay()));
+  const isIdea = p.status === 'idea';
+  return `
+  <div class="card project-card ${isOpen ? 'open' : ''} ${isIdea ? 'is-idea' : ''}" data-project-card="${p.id}">
+    <div class="project-head" data-toggle-project="${p.id}">
+      <span class="project-dot" style="background:${p.color || '#C3C0D2'}"></span>
+      <div style="flex:1;min-width:0">
+        <div class="project-name">${esc(p.name)}</div>
+        <div class="project-meta">
+          ${isIdea ? `<span class="tag t-peach">${ic('lightbulb', 10)}רעיון</span> · ` : ''}
+          ${p.status === 'never' ? `<span class="tag t-rose">${ic('ban', 10)}כבר לא יקרה</span> · ` : ''}
+          ${open.length ? `${open.length} פתוחות` : (neverList.length ? 'אין פתוחות' : 'הכל בוצע!')} · ${done}/${tasks.length}
+          ${pDays.length ? ` · <span class="days-badge${pActiveToday ? ' today' : ''}">${ic('calendar', 10)}${pDays.map(d => DAY_SHORT[+d]).join(' ')}</span>` : ''}
+        </div>
+      </div>
+      <button class="icon-btn" data-edit-project="${p.id}" title="עריכה" style="width:34px;height:34px;box-shadow:none;background:transparent">${ic('pencil', 16)}</button>
+      <span class="project-chevron">${ic('chevronDown', 20)}</span>
+    </div>
+    <div class="progress-track"><div class="progress-fill" style="width:${pct}%"></div></div>
+    ${!isOpen && next ? `<div style="margin-top:10px"><span class="tag t-peach">${ic('star', 11)}הבא: ${esc(next.title)}</span></div>` : ''}
+    ${isOpen ? `
+      <div class="project-tasks">
+        ${open.map(t => taskCard(t, { withProject: false })).join('') || '<div class="empty-state" style="padding:16px"><p class="sub">אין משימות פתוחות</p></div>'}
+      </div>
+      <div class="project-add">
+        <input type="text" placeholder="משימה חדשה לפרויקט..." data-project-input="${p.id}">
+        <button class="btn btn-ghost" data-project-addbtn="${p.id}">${ic('plus', 18)}</button>
+      </div>
+      ${neverList.length ? `
+        <button class="done-toggle" data-toggle-pnever="${p.id}">
+          ${ic('chevronDown', 15)} כבר לא יקרה <span class="count">${neverList.length}</span>
+        </button>
+        ${SHOW_NEVER_TASKS.has(p.id) ? `
+          <div class="project-tasks done-list">
+            ${neverList.map(t => `
+              <div class="win-card">
+                <span class="win-check" style="background:var(--rose-soft);color:#D14383">${ic('ban', 16)}</span>
+                <span class="win-title">${esc(t.title)}</span>
+                <button class="win-undo" data-edit="${t.id}" title="עריכה">${ic('pencil', 15)}</button>
+              </div>`).join('')}
+          </div>` : ''}
+      ` : ''}
+      ${doneList.length ? `
+        <button class="done-toggle" data-toggle-pdone="${p.id}">
+          ${ic('chevronDown', 15)} בוצעו <span class="count">${doneList.length}</span>
+        </button>
+        ${SHOW_DONE_TASKS.has(p.id) ? `
+          <div class="project-tasks done-list">
+            ${doneList.map(t => {
+              const d = parseUTC(t.completed_at);
+              return `
+              <div class="win-card">
+                <span class="win-check">${ic('check', 16)}</span>
+                <span class="win-title done-text">${esc(t.title)}</span>
+                ${d ? `<span class="win-time">${dayLabel(localDateStr(d))}</span>` : ''}
+                <button class="win-undo" data-reopen="${t.id}" title="החזרה לרשימה">${ic('rotateCcw', 15)}</button>
+              </div>`;
+            }).join('')}
+          </div>` : ''}
+      ` : ''}
+    ` : ''}
+  </div>`;
+}
+
 /* ---------- תצוגת פרויקטים ---------- */
 function renderProjects() {
   const active = DATA.projects.filter(p => p.status === 'active');
   const someday = DATA.projects.filter(p => p.status === 'someday');
-
-  const projCard = p => {
-    const tasks = DATA.tasks.filter(t => t.project_id == p.id && !['dropped', 'draft'].includes(t.status));
-    const open = tasks.filter(t => t.status !== 'done');
-    const doneList = tasks.filter(t => t.status === 'done')
-      .sort((a, b) => String(b.completed_at || '').localeCompare(String(a.completed_at || '')));
-    const done = doneList.length;
-    const pct = tasks.length ? Math.round(done / tasks.length * 100) : 0;
-    const isOpen = OPEN_PROJECTS.has(p.id);
-    const next = open.find(t => t.is_next == 1);
-    const pDays = String(p.active_days || '').split(',').map(s => s.trim()).filter(s => s !== '');
-    const pActiveToday = !pDays.length || pDays.includes(String(new Date().getDay()));
-    return `
-    <div class="card project-card ${isOpen ? 'open' : ''}" data-project-card="${p.id}">
-      <div class="project-head" data-toggle-project="${p.id}">
-        <span class="project-dot" style="background:${p.color || '#C3C0D2'}"></span>
-        <div style="flex:1;min-width:0">
-          <div class="project-name">${esc(p.name)}</div>
-          <div class="project-meta">
-            ${open.length ? `${open.length} פתוחות` : 'הכל בוצע!'} · ${done}/${tasks.length}
-            ${pDays.length ? ` · <span class="days-badge${pActiveToday ? ' today' : ''}">${ic('calendar', 10)}${pDays.map(d => DAY_SHORT[+d]).join(' ')}</span>` : ''}
-          </div>
-        </div>
-        <button class="icon-btn" data-edit-project="${p.id}" title="עריכה" style="width:34px;height:34px;box-shadow:none;background:transparent">${ic('pencil', 16)}</button>
-        <span class="project-chevron">${ic('chevronDown', 20)}</span>
-      </div>
-      <div class="progress-track"><div class="progress-fill" style="width:${pct}%"></div></div>
-      ${!isOpen && next ? `<div style="margin-top:10px"><span class="tag t-peach">${ic('star', 11)}הבא: ${esc(next.title)}</span></div>` : ''}
-      ${isOpen ? `
-        <div class="project-tasks">
-          ${open.map(t => taskCard(t, { withProject: false })).join('') || '<div class="empty-state" style="padding:16px"><p class="sub">אין משימות פתוחות</p></div>'}
-        </div>
-        <div class="project-add">
-          <input type="text" placeholder="משימה חדשה לפרויקט..." data-project-input="${p.id}">
-          <button class="btn btn-ghost" data-project-addbtn="${p.id}">${ic('plus', 18)}</button>
-        </div>
-        ${doneList.length ? `
-          <button class="done-toggle" data-toggle-pdone="${p.id}">
-            ${ic('chevronDown', 15)} בוצעו <span class="count">${doneList.length}</span>
-          </button>
-          ${SHOW_DONE_TASKS.has(p.id) ? `
-            <div class="project-tasks done-list">
-              ${doneList.map(t => {
-                const d = parseUTC(t.completed_at);
-                return `
-                <div class="win-card">
-                  <span class="win-check">${ic('check', 16)}</span>
-                  <span class="win-title done-text">${esc(t.title)}</span>
-                  ${d ? `<span class="win-time">${dayLabel(localDateStr(d))}</span>` : ''}
-                  <button class="win-undo" data-reopen="${t.id}" title="החזרה לרשימה">${ic('rotateCcw', 15)}</button>
-                </div>`;
-              }).join('')}
-            </div>` : ''}
-        ` : ''}
-      ` : ''}
-    </div>`;
-  };
+  const never = DATA.projects.filter(p => p.status === 'never');
 
   return `
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
     <div class="section-title" style="margin:0">${ic('folder', 20)} הפרויקטים שלי <span class="count">${active.length}</span></div>
     <button class="btn btn-ghost" id="btn-new-project">${ic('plus', 16)} פרויקט</button>
   </div>
-  <div class="projects-grid">${active.map(projCard).join('')}</div>
-  ${active.length === 0 ? `<div class="empty-state">${ic('folder', 44)}<p>עוד אין פרויקטים</p><p class="sub">התחילי עם אחד קטן</p></div>` : ''}
+  <div class="projects-grid">${active.map(projectCard).join('')}</div>
+  ${active.length === 0 ? `<div class="empty-state">${ic('folder', 44)}<p>עוד אין פרויקטים</p><p class="sub">התחילי עם אחד קטן · רעיון עובר ללשונית רעיונות</p></div>` : ''}
   ${someday.length ? `
     <div class="section-title">${ic('cloudSun', 18)} מתישהו / אולי <span class="count">${someday.length}</span></div>
-    <div class="projects-grid">${someday.map(projCard).join('')}</div>
+    <div class="projects-grid">${someday.map(projectCard).join('')}</div>
+  ` : ''}
+  ${never.length ? `
+    <div class="section-title">${ic('ban', 18)} כבר לא יקרה <span class="count">${never.length}</span></div>
+    <div class="projects-grid">${never.map(projectCard).join('')}</div>
   ` : ''}`;
 }
 
@@ -735,6 +781,7 @@ function renderAll() {
     ['inbox',   'מלאי',      'inbox'],
     ['waiting', 'ממתין למישהו', 'hourglass'],
     ['someday', 'מתישהו / אולי', 'cloudSun'],
+    ['never',   'כבר לא יקרה',  'ban'],
   ];
   return `
   <div class="quick-add">
@@ -757,14 +804,16 @@ function renderAll() {
             </div>
             <select class="orphan-pick" data-adopt="${t.id}">
               <option value="">— לשייך לפרויקט —</option>
-              ${DATA.projects.filter(p => ['active', 'someday'].includes(p.status))
+              ${liveProjects()
                 .map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('')}
             </select>
           </div>`).join('')}
       </div>` : ''}
   ` : ''}
   ${groups.map(([st, label, icon]) => {
-    const list = open.filter(t => t.status === st);
+    const list = st === 'never'
+      ? DATA.tasks.filter(t => t.status === 'never' && !projectHidesLists(projectOf(t)))
+      : open.filter(t => t.status === st);
     if (!list.length) return '';
     return `
       <div class="section-title">${ic(icon, 18)} ${label} <span class="count">${list.length}</span></div>
@@ -1446,13 +1495,14 @@ function itemRow(it) {
     <button class="item-check ${it.done == 1 ? 'checked' : ''}" data-toggle-item="${it.id}" title="בוצע">${ic('check', 13)}</button>
     <div class="item-main">
       <textarea class="item-title" data-field="title" data-id="${it.id}" rows="1" placeholder="${it.kind === 'prompt' ? 'שם הפרומפט...' : 'מה הרעיון?'}">${esc(it.title)}</textarea>
-      <div class="body-box${it.kind === 'prompt' ? ' is-prompt' : ''}${!(it.body || '').trim() ? ' is-empty' : ''}${EXPANDED_PROMPTS.has(it.id) ? ' expanded' : ''}">
-        <textarea class="item-body" data-field="body" data-id="${it.id}" rows="2" placeholder="${it.kind === 'prompt' ? 'הפרומפט עצמו — יישמר כאן לשימוש חוזר' : 'פירוט — לחיצה לעריכה'}">${esc(it.body)}</textarea>
-        <div class="body-btns">
-          ${it.kind === 'prompt' ? `<button class="icon-btn body-btn" data-copy-item="${it.id}" title="העתקת הפרומפט">${ic('copy', 15)}</button>` : ''}
-          <button class="icon-btn body-btn" data-expand="${it.id}" title="${EXPANDED_PROMPTS.has(it.id) ? 'לכווץ' : 'לפתוח הכל'}">${ic('chevronDown', 15)}</button>
-        </div>
-      </div>
+      ${(it.kind === 'prompt' || (it.body || '').trim()) ? `
+        <div class="body-box${it.kind === 'prompt' ? ' is-prompt' : ''}${!(it.body || '').trim() ? ' is-empty' : ''}${EXPANDED_PROMPTS.has(it.id) ? ' expanded' : ''}">
+          <textarea class="item-body" data-field="body" data-id="${it.id}" rows="2" placeholder="${it.kind === 'prompt' ? 'הפרומפט עצמו — יישמר כאן לשימוש חוזר' : ''}">${esc(it.body)}</textarea>
+          <div class="body-btns">
+            ${it.kind === 'prompt' ? `<button class="icon-btn body-btn" data-copy-item="${it.id}" title="העתקת הפרומפט">${ic('copy', 15)}</button>` : ''}
+            <button class="icon-btn body-btn" data-expand="${it.id}" title="${EXPANDED_PROMPTS.has(it.id) ? 'לכווץ' : 'לפתוח הכל'}">${ic('chevronDown', 15)}</button>
+          </div>
+        </div>` : ''}
     </div>
     ${kindBtn}${del}
   </div>`;
@@ -1543,9 +1593,16 @@ function renderIdeas() {
 
   if (IDEAS_SEARCH.trim()) return top + renderIdeasSearch(IDEAS_SEARCH.trim());
 
-  return top + (live.length
+  const incubating = DATA.projects.filter(p => p.status === 'idea');
+  const ideaProjectsHtml = incubating.length ? `
+    <div class="section-title" style="margin-top:0">${ic('lightbulb', 18)} פרויקטים במצב רעיון <span class="count">${incubating.length}</span></div>
+    <p class="ideas-hint">המשימות כאן לא עולות ל״עכשיו״ ול״הכל״ — רק כשפותחים את הפרויקט.</p>
+    <div class="projects-grid" style="margin-bottom:22px">${incubating.map(projectCard).join('')}</div>
+  ` : '';
+
+  return top + ideaProjectsHtml + (live.length
     ? `<div class="apps-grid">${live.map(appCard).join('')}</div>`
-    : `<div class="empty-state">${ic('lightbulb', 44)}<p>עוד אין רעיונות לאפליקציות</p><p class="sub">כל אפליקציה מקבלת מקום משלה לרעיונות, פיצ'רים ופרומפטים</p></div>`)
+    : (incubating.length ? '' : `<div class="empty-state">${ic('lightbulb', 44)}<p>עוד אין רעיונות לאפליקציות</p><p class="sub">כל אפליקציה מקבלת מקום משלה לרעיונות, פיצ'רים ופרומפטים</p></div>`))
   + (finished.length ? `
     <button class="done-toggle" id="toggle-done-apps" style="margin:22px 4px 10px">
       ${ic('chevronDown', 15)} אפליקציות שהושלמו <span class="count">${finished.length}</span>
@@ -1999,6 +2056,12 @@ function bindMain() {
     SHOW_DONE_TASKS.has(id) ? SHOW_DONE_TASKS.delete(id) : SHOW_DONE_TASKS.add(id);
     render();
   });
+  $$('[data-toggle-pnever]').forEach(b => b.onclick = e => {
+    e.stopPropagation();
+    const id = +b.dataset.togglePnever;
+    SHOW_NEVER_TASKS.has(id) ? SHOW_NEVER_TASKS.delete(id) : SHOW_NEVER_TASKS.add(id);
+    render();
+  });
   $$('[data-project-addbtn]').forEach(b => b.onclick = () => addProjectTask(+b.dataset.projectAddbtn));
   $$('[data-project-input]').forEach(inp => inp.onkeydown = e => {
     if (e.key === 'Enter') addProjectTask(+inp.dataset.projectInput);
@@ -2362,7 +2425,7 @@ function openBulkEditModal() {
       <select id="bulk-project">
         <option value="__keep">לא לשנות</option>
         <option value="">בלי פרויקט</option>
-        ${DATA.projects.filter(p => ['active', 'someday'].includes(p.status)).map(p =>
+        ${liveProjects().map(p =>
           `<option value="${p.id}">${esc(p.name)}</option>`).join('')}
       </select>
     </div>
@@ -2426,7 +2489,8 @@ function openDeferPop(id, anchor) {
     <button data-why="out">${ic('mapPin', 16)} זה בכלל בחוץ</button>
     <button data-why="home">${ic('home', 16)} זה בכלל בבית</button>
     <button data-why="tomorrow">${ic('moon', 16)} לא היום, אולי מחר</button>
-    <button data-why="someday">${ic('cloudSun', 16)} מתישהו, לא דחוף</button>`;
+    <button data-why="someday">${ic('cloudSun', 16)} מתישהו, לא דחוף</button>
+    <button data-why="never">${ic('ban', 16)} כבר לא יקרה</button>`;
   document.body.appendChild(pop);
   const r = anchor.getBoundingClientRect();
   pop.style.top = Math.min(window.innerHeight - pop.offsetHeight - 12, r.bottom + 6 + window.scrollY) + 'px';
@@ -2441,6 +2505,7 @@ function openDeferPop(id, anchor) {
     if (why === 'out') fields.context = 'out';
     if (why === 'home') fields.context = 'home';
     if (why === 'someday') fields.status = 'someday';
+    if (why === 'never') fields.status = 'never';
     if (why === 'tomorrow') {
       const tmrw = new Date();
       tmrw.setDate(tmrw.getDate() + 1);
@@ -2489,7 +2554,7 @@ function openTaskSheet(id, prefill = null) {
         <div class="field-label">${ic('folder', 13)} פרויקט</div>
         <select id="sheet-project">
           <option value="">בלי פרויקט</option>
-          ${DATA.projects.filter(p => ['active', 'someday'].includes(p.status)).map(p =>
+          ${liveProjects().map(p =>
             `<option value="${p.id}" ${t.project_id == p.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}
         </select>
       </div>
@@ -2789,7 +2854,7 @@ function searchAll(q) {
     const st = STATUS[t.status] || {};
     add('task', t.id, t.title, [projName(t.project_id), st.label].filter(Boolean).join(' · '),
         [[t.title, 10], [t.notes, 3]],
-        t.status === 'done' ? 'בוצע' : t.status === 'draft' ? 'ממתין לאישור' : '');
+        t.status === 'done' ? 'בוצע' : t.status === 'draft' ? 'ממתין לאישור' : t.status === 'never' ? 'כבר לא יקרה' : '');
   });
 
   DATA.projects.forEach(p => add('project', p.id, p.name, '', [[p.name, 10], [p.notes, 3]]));
@@ -2856,7 +2921,9 @@ function gotoResult(type, id) {
   if (type === 'task') { openTaskSheet(id); return; }
   if (type === 'training') { VIEW = 'trainings'; render(); openTrainingSheet(id); return; }
   if (type === 'project') {
-    VIEW = 'projects'; OPEN_PROJECTS.add(id); render();
+    const p = DATA.projects.find(x => x.id == id);
+    VIEW = (p && p.status === 'idea') ? 'ideas' : 'projects';
+    OPEN_PROJECTS.add(id); render();
     setTimeout(() => $(`[data-project-card="${id}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 60);
     return;
   }
@@ -2951,9 +3018,12 @@ function openProjectModal(id) {
       <div class="field-label">מצב</div>
       <div class="chips">
         <button class="chip c-teal ${p.status === 'active' ? 'on' : ''}" data-pstatus="active">${ic('zap', 14)}פעיל</button>
+        <button class="chip c-peach ${p.status === 'idea' ? 'on' : ''}" data-pstatus="idea">${ic('lightbulb', 14)}רעיון</button>
         <button class="chip c-lilac ${p.status === 'someday' ? 'on' : ''}" data-pstatus="someday">${ic('cloudSun', 14)}מתישהו</button>
+        <button class="chip c-rose ${p.status === 'never' ? 'on' : ''}" data-pstatus="never">${ic('ban', 14)}כבר לא יקרה</button>
         <button class="chip c-sky ${p.status === 'done' ? 'on' : ''}" data-pstatus="done">${ic('check', 14)}הושלם</button>
       </div>
+      <div class="day-hint" id="proj-status-hint"></div>
     </div>
     <div class="field">
       <div class="field-label">${ic('calendar', 13)} באילו ימים הפרויקט אקטיבי</div>
@@ -2971,12 +3041,24 @@ function openProjectModal(id) {
 
   let color = p.color, status = p.status;
   let days = [...curDays];
+  const statusHint = () => {
+    const el = $('#proj-status-hint');
+    if (!el) return;
+    el.textContent = ({
+      active: 'המשימות מופיעות ב״עכשיו״ וב״הכל״',
+      idea: 'עובר ללשונית רעיונות — המשימות נשארות בפנים ולא עולות לרשימות',
+      someday: 'מתישהו / אולי',
+      never: 'כבר לא יקרה — מוסתר מהרשימות',
+      done: 'פרויקט שהושלם',
+    })[status] || '';
+  };
   const dayHint = () => {
     $('#proj-day-hint').textContent = (days.length === 0 || days.length === 7)
       ? 'בלי בחירה — הפרויקט אקטיבי בכל יום'
       : 'בשאר הימים המשימות שלו לא יופיעו ב״עכשיו״';
   };
   dayHint();
+  statusHint();
   $$('#modal [data-pday]').forEach(b => b.onclick = () => {
     const d = b.dataset.pday;
     days = days.includes(d) ? days.filter(x => x !== d) : days.concat(d);
@@ -2990,6 +3072,7 @@ function openProjectModal(id) {
   $$('#modal [data-pstatus]').forEach(b => b.onclick = () => {
     status = b.dataset.pstatus;
     $$('#modal [data-pstatus]').forEach(x => x.classList.toggle('on', x.dataset.pstatus === status));
+    statusHint();
   });
   $('#proj-cancel').onclick = closeModal;
   $('#proj-save').onclick = async () => {
@@ -3002,8 +3085,13 @@ function openProjectModal(id) {
     try {
       if (id) await api('project_update', { id, ...fields });
       else await api('project_create', fields);
+      if (id) {
+        OPEN_PROJECTS.add(id);
+        if (status === 'idea') { VIEW = 'ideas'; localStorage.setItem('tasks_view', VIEW); }
+        else if (VIEW === 'ideas') { VIEW = 'projects'; localStorage.setItem('tasks_view', VIEW); }
+      }
       await reload();
-      toast(id ? 'הפרויקט עודכן' : 'פרויקט חדש נולד!');
+      toast(id ? (status === 'idea' ? 'עבר לרעיונות — המשימות לא יופיעו ברשימות' : 'הפרויקט עודכן') : 'פרויקט חדש נולד!');
     } catch (e) { toast('אופס — ' + e.message); }
   };
   const arch = $('#proj-archive');
