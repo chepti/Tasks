@@ -2131,9 +2131,10 @@ function enableStrikeDelete(card) {
     const w = card.getBoundingClientRect().width;
     const frac = Math.min(1, Math.abs(dx) / w);
     line.style.width = (frac * 100) + '%';
-    // בעברית גוררים בדרך כלל שמאלה; הקו נמתח מהצד שממנו התחלנו
-    line.style.insetInlineStart = dx < 0 ? 'auto' : '0';
-    line.style.insetInlineEnd = dx < 0 ? '0' : 'auto';
+    // הקו נמתח מנקודת ההתחלה בכיוון האצבע. חייב להיות left/right פיזי ולא
+    // inset-inline — בעברית (RTL) הלוגי מתהפך והקו יצא מהצד ההפוך לגרירה.
+    if (dx < 0) { line.style.right = '0'; line.style.left = 'auto'; }
+    else { line.style.left = '0'; line.style.right = 'auto'; }
     const nowCrossed = frac >= STRIKE_THRESHOLD;
     if (nowCrossed !== crossed) {
       crossed = nowCrossed;
