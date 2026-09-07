@@ -874,6 +874,35 @@ button.chip:hover { transform: translateY(-1px); border-color: var(--ink-soft); 
   .t-bottom { margin-top: 8px; }
 }
 
+/* ============ פוטר ============ */
+/* משתלב ולא מודבק: קו מפריד עדין, טקסט שקט, וכפתור pill באותה שפה */
+
+.app-footer {
+  max-width: 1100px;
+  margin: 34px auto 0;
+  padding: 16px 20px calc(20px + env(safe-area-inset-bottom));
+  border-top: 1.5px solid var(--bg-soft);
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap;
+}
+.footer-credit {
+  display: inline-flex; align-items: center; gap: 7px;
+  color: var(--ink-soft);
+  text-decoration: none;
+  font-size: .82rem; font-weight: 600;
+  border-radius: var(--r-pill);
+  padding: 6px 4px;
+  transition: color .15s;
+}
+.footer-credit:hover { color: var(--coral); }
+.footer-credit svg { color: var(--lilac); }
+.footer-feedback { padding: 7px 16px; font-size: .82rem; }
+
+@media (max-width: 799px) {
+  /* מעל הניווט התחתון, שלא ייחתך */
+  .app-footer { margin-bottom: calc(var(--nav-h) + 6px); }
+}
+
 /* ============ חיפוש גלובלי ============ */
 
 .modal.modal-search {

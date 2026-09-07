@@ -3044,6 +3044,20 @@ $('#login-form').onsubmit = async e => {
 
 $('#fab').onclick = () => openTaskSheet(null);
 $('#fab').innerHTML = ic('plus', 26);
+// פוטר: קרדיט + משוב. יעד המשוב עוד לא נקבע — הכפתור מסביר זאת במקום להיראות שבור.
+$('#footer-mark').innerHTML = ic('sparkles', 15);
+$('#footer-fb-icon').innerHTML = ic('messageSquare', 15);
+$('#btn-feedback').onclick = () => {
+  openModal(`
+    <h3>${ic('messageSquare', 20)} משוב</h3>
+    <p style="color:var(--ink-soft);font-size:.9rem;line-height:1.6">
+      יעד המשוב לאפליקציה הזו עוד לא הוגדר — צריך להחליט לאן הוא אמור להגיע
+      (מייל, וואטסאפ, טופס, או ישר לרשימת הרעיונות כאן במערכת).
+    </p>
+    <div class="sheet-actions"><button class="btn btn-ghost" id="fb-close" style="flex:1">סגירה</button></div>`);
+  $('#fb-close').onclick = closeModal;
+};
+
 $('#offline-badge').onclick = openSyncModal;
 // ניסיון חוזר תקופתי — קודם התור נשאר תקוע עד שהמשתמשת החליפה טאב
 setInterval(() => {

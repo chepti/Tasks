@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Varela+Round&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=18">
+<link rel="stylesheet" href="css/style.css?v=19">
 </head>
 <body>
 
@@ -50,6 +50,16 @@
 
   <main id="main" class="main"></main>
 
+  <footer class="app-footer">
+    <a class="footer-credit" href="https://chepti.com" target="_blank" rel="noopener">
+      <span id="footer-mark"></span>
+      <span>חולמים תקשוב</span>
+    </a>
+    <button class="btn btn-ghost footer-feedback" id="btn-feedback">
+      <span id="footer-fb-icon"></span> משוב
+    </button>
+  </footer>
+
   <nav class="bottomnav" id="bottomnav"></nav>
 
   <button class="fab" id="fab" title="משימה חדשה"></button>
@@ -67,7 +77,7 @@
 <div id="toast" class="toast hidden"></div>
 <canvas id="confetti-canvas"></canvas>
 
-<script src="js/app.js?v=18"></script>
+<script src="js/app.js?v=19"></script>
 <script>
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js').catch(function(){});
