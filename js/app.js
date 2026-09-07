@@ -2100,6 +2100,7 @@ function enableStrikeDelete(card) {
   const id = +card.dataset.task;
   if (!id) return;
   let startX = 0, startY = 0, active = false, decided = false, line = null, crossed = false;
+  let pid = null;   // רק המצביע שהתחיל את הגרירה נחשב — אצבע שנייה או עכבר אחר לא יאפסו אותה
 
   const cleanup = () => {
     document.removeEventListener('pointermove', onMove);
@@ -2107,10 +2108,11 @@ function enableStrikeDelete(card) {
     document.removeEventListener('pointercancel', onUp);
     if (line) { line.remove(); line = null; }
     card.classList.remove('striking', 'strike-armed');
-    active = false; decided = false; crossed = false;
+    active = false; decided = false; crossed = false; pid = null;
   };
 
   const onMove = e => {
+    if (pid !== null && e.pointerId !== pid) return;
     const dx = e.clientX - startX, dy = e.clientY - startY;
     if (!decided) {
       if (Math.abs(dx) < 12 && Math.abs(dy) < 12) return;
@@ -2140,7 +2142,8 @@ function enableStrikeDelete(card) {
     }
   };
 
-  const onUp = () => {
+  const onUp = e => {
+    if (e && pid !== null && e.pointerId !== pid) return;
     const didCross = crossed;
     cleanup();
     if (didCross) {
@@ -2152,8 +2155,12 @@ function enableStrikeDelete(card) {
   card.addEventListener('pointerdown', e => {
     // רק גרירה ישירה על הכרטיס — לא על הכפתורים שבתוכו
     if (e.target.closest('button, a, select, input, textarea')) return;
+    if (pid !== null) return;                 // גרירה אחת בכל פעם
+    pid = e.pointerId;
     startX = e.clientX; startY = e.clientY;
     decided = false; active = false; crossed = false;
+    // תופס את המצביע כדי שכל האירועים שלו יגיעו אלינו ולא יתפזרו
+    try { card.setPointerCapture(e.pointerId); } catch (err) {}
     document.addEventListener('pointermove', onMove, { passive: false });
     document.addEventListener('pointerup', onUp);
     document.addEventListener('pointercancel', onUp);
@@ -3044,18 +3051,31 @@ $('#login-form').onsubmit = async e => {
 
 $('#fab').onclick = () => openTaskSheet(null);
 $('#fab').innerHTML = ic('plus', 26);
-// פוטר: קרדיט + משוב. יעד המשוב עוד לא נקבע — הכפתור מסביר זאת במקום להיראות שבור.
+/* פוטר: קרדיט + משוב במייל. נפתח כטופס קטן ולא ישר ב-mailto, כדי שהטקסט
+   יהיה מוכן ואפשר גם להעתיק אותו אם פתיחת המייל נכשלת. */
+const FEEDBACK_EMAIL = 'chepti@gmail.com';
 $('#footer-mark').innerHTML = ic('sparkles', 15);
 $('#footer-fb-icon').innerHTML = ic('messageSquare', 15);
 $('#btn-feedback').onclick = () => {
   openModal(`
     <h3>${ic('messageSquare', 20)} משוב</h3>
-    <p style="color:var(--ink-soft);font-size:.9rem;line-height:1.6">
-      יעד המשוב לאפליקציה הזו עוד לא הוגדר — צריך להחליט לאן הוא אמור להגיע
-      (מייל, וואטסאפ, טופס, או ישר לרשימת הרעיונות כאן במערכת).
-    </p>
-    <div class="sheet-actions"><button class="btn btn-ghost" id="fb-close" style="flex:1">סגירה</button></div>`);
-  $('#fb-close').onclick = closeModal;
+    <p style="color:var(--ink-soft);font-size:.88rem;margin-bottom:10px">מה עובד, מה מפריע, מה חסר?</p>
+    <div class="field"><textarea id="fb-text" rows="5" placeholder="כתבי כאן..."></textarea></div>
+    <div class="sheet-actions">
+      <button class="btn btn-ghost" id="fb-copy">${ic('copy', 15)} העתקה</button>
+      <button class="btn btn-primary" id="fb-send" style="flex:1">${ic('send', 15)} לשליחה במייל</button>
+    </div>`);
+  const body = () => $('#fb-text').value.trim();
+  $('#fb-text').focus();
+  $('#fb-copy').onclick = () => { if (body()) copyText(body()); };
+  $('#fb-send').onclick = () => {
+    const txt = body();
+    if (!txt) { $('#fb-text').focus(); return; }
+    const url = `mailto:${FEEDBACK_EMAIL}?subject=${encodeURIComponent('משוב — המשימות שלי')}&body=${encodeURIComponent(txt)}`;
+    window.location.href = url;
+    closeModal();
+    toast('נפתח מייל — אם לא, אפשר להעתיק את הטקסט');
+  };
 };
 
 $('#offline-badge').onclick = openSyncModal;
