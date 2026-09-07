@@ -61,6 +61,7 @@ function ic(name, size = 20) {
     messageSquare: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
     search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
     cornerDownLeft: '<path d="M20 4v7a4 4 0 0 1-4 4H4"/><polyline points="9 10 4 15 9 20"/>',
+    checkSquare: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="m9 12 2 2 4-4"/>',
   };
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${paths[name] || ''}</svg>`;
 }
@@ -114,6 +115,9 @@ let SHOW_DONE_APPS = false;       // האם להציג את האפליקציות
 let SHOW_ORPHANS = false;         // האם לפתוח את רשימת המשימות בלי פרויקט אב
 let SHOW_DONE_TASKS = new Set();  // באילו פרויקטים מוצגות גם המשימות שבוצעו
 let IDEAS_SEARCH = '';            // חיפוש חופשי ברעיונות ובפרומפטים
+let SELECT_MODE = false;          // בחירה מרובה של משימות
+let SELECTING = new Set();        // מזהי המשימות שנבחרו
+let suppressTaskClick = false;    // אחרי לחיצה-ארוכה לא לפתוח את גיליון העריכה
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -502,6 +506,7 @@ function render() {
   if (VIEW === 'ideas') bindIdeas();
   if (VIEW === 'review') bindReview();
   updateOfflineBadge();
+  syncBulkBar();
 }
 
 /* ---------- כרטיס משימה ---------- */
@@ -533,8 +538,9 @@ function taskTags(t, { withProject = true } = {}) {
 
 function taskCard(t, { defer = false, withProject = true } = {}) {
   const tags = taskTags(t, { withProject });
+  const selected = SELECTING.has(+t.id) ? ' selected' : '';
   return `
-  <div class="task-card" data-task="${t.id}">
+  <div class="task-card${selected}" data-task="${t.id}">
     <button class="check-circle" data-complete="${t.id}" title="בוצע!">${ic('check', 16)}</button>
     <div class="task-body" data-edit="${t.id}">
       <div class="task-title">${esc(t.title)}</div>
@@ -1440,14 +1446,13 @@ function itemRow(it) {
     <button class="item-check ${it.done == 1 ? 'checked' : ''}" data-toggle-item="${it.id}" title="בוצע">${ic('check', 13)}</button>
     <div class="item-main">
       <textarea class="item-title" data-field="title" data-id="${it.id}" rows="1" placeholder="${it.kind === 'prompt' ? 'שם הפרומפט...' : 'מה הרעיון?'}">${esc(it.title)}</textarea>
-      ${(it.kind === 'prompt' || (it.body || '').trim()) ? `
-        <div class="body-box${it.kind === 'prompt' ? ' is-prompt' : ''}${EXPANDED_PROMPTS.has(it.id) ? ' expanded' : ''}">
-          <textarea class="item-body" data-field="body" data-id="${it.id}" rows="2" placeholder="${it.kind === 'prompt' ? 'הפרומפט עצמו — יישמר כאן לשימוש חוזר' : 'פירוט...'}">${esc(it.body)}</textarea>
-          <div class="body-btns">
-            ${it.kind === 'prompt' ? `<button class="icon-btn body-btn" data-copy-item="${it.id}" title="העתקת הפרומפט">${ic('copy', 15)}</button>` : ''}
-            <button class="icon-btn body-btn" data-expand="${it.id}" title="${EXPANDED_PROMPTS.has(it.id) ? 'לכווץ' : 'לפתוח הכל'}">${ic('chevronDown', 15)}</button>
-          </div>
-        </div>` : ''}
+      <div class="body-box${it.kind === 'prompt' ? ' is-prompt' : ''}${!(it.body || '').trim() ? ' is-empty' : ''}${EXPANDED_PROMPTS.has(it.id) ? ' expanded' : ''}">
+        <textarea class="item-body" data-field="body" data-id="${it.id}" rows="2" placeholder="${it.kind === 'prompt' ? 'הפרומפט עצמו — יישמר כאן לשימוש חוזר' : 'פירוט — לחיצה לעריכה'}">${esc(it.body)}</textarea>
+        <div class="body-btns">
+          ${it.kind === 'prompt' ? `<button class="icon-btn body-btn" data-copy-item="${it.id}" title="העתקת הפרומפט">${ic('copy', 15)}</button>` : ''}
+          <button class="icon-btn body-btn" data-expand="${it.id}" title="${EXPANDED_PROMPTS.has(it.id) ? 'לכווץ' : 'לפתוח הכל'}">${ic('chevronDown', 15)}</button>
+        </div>
+      </div>
     </div>
     ${kindBtn}${del}
   </div>`;
@@ -1738,10 +1743,21 @@ function bindIdeas() {
   };
   $$('#main .item-title, #main .item-body').forEach(el => {
     grow(el);
-    el.addEventListener('input', () => grow(el));
+    el.addEventListener('input', () => {
+      grow(el);
+      const box = el.closest('.body-box');
+      if (box && el.dataset.field === 'body') box.classList.toggle('is-empty', !el.value.trim());
+    });
     el.addEventListener('blur', () => saveItemField(+el.dataset.id, el.dataset.field, el.value.trim()));
     el.addEventListener('keydown', e => {
       if (e.key === 'Enter' && !e.shiftKey && el.dataset.field === 'title') { e.preventDefault(); el.blur(); }
+    });
+  });
+  $$('#main .item-main').forEach(main => {
+    main.addEventListener('pointerdown', e => {
+      if (e.target.closest('textarea, button')) return;
+      const title = main.querySelector('.item-title');
+      if (title) title.focus();
     });
   });
 
@@ -1896,18 +1912,30 @@ function renderWins() {
 
 /* ---------- חיבור אירועים ---------- */
 function bindMain() {
-  // השלמת משימה
+  // השלמת משימה — במצב בחירה הכפתור רק מוסיף לבחירה, כדי לא לסמן בטעות
   $$('[data-complete]').forEach(b => b.onclick = e => {
     e.stopPropagation();
+    if (SELECT_MODE) { toggleSelected(+b.dataset.complete); return; }
     completeTask(+b.dataset.complete, b);
   });
-  // גרירת קו עיפרון למחיקה
+  // גרירת קו עיפרון למחיקה (+ לחיצה-ארוכה לבחירה מרובה)
   $$('#main .task-card[data-task]').forEach(enableStrikeDelete);
-  // עריכה
-  $$('[data-edit]').forEach(el => el.onclick = () => openTaskSheet(+el.dataset.edit));
+  // עריכה — לחיצה רגילה פותחת גיליון; Ctrl/Shift או מצב בחירה = סימון
+  $$('[data-edit]').forEach(el => el.onclick = e => {
+    const id = +el.dataset.edit;
+    if (suppressTaskClick) { e.preventDefault(); e.stopPropagation(); return; }
+    if (SELECT_MODE || e.shiftKey || e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      e.stopPropagation();
+      toggleSelected(id);
+      return;
+    }
+    openTaskSheet(id);
+  });
   // כוכב
   $$('[data-star]').forEach(b => b.onclick = e => {
     e.stopPropagation();
+    if (SELECT_MODE) { toggleSelected(+b.dataset.star); return; }
     const t = DATA.tasks.find(x => x.id == b.dataset.star);
     const turningOn = t.is_next != 1;
     buzz(turningOn ? 10 : 5);
@@ -2101,12 +2129,17 @@ function enableStrikeDelete(card) {
   if (!id) return;
   let startX = 0, startY = 0, active = false, decided = false, line = null, crossed = false;
   let pid = null;   // רק המצביע שהתחיל את הגרירה נחשב — אצבע שנייה או עכבר אחר לא יאפסו אותה
+  let holdTimer = null;
 
   const cleanup = () => {
     document.removeEventListener('pointermove', onMove);
     document.removeEventListener('pointerup', onUp);
     document.removeEventListener('pointercancel', onUp);
+    if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
     if (line) { line.remove(); line = null; }
+    if (pid !== null) {
+      try { card.releasePointerCapture(pid); } catch (err) {}
+    }
     card.classList.remove('striking', 'strike-armed');
     active = false; decided = false; crossed = false; pid = null;
   };
@@ -2118,8 +2151,13 @@ function enableStrikeDelete(card) {
       if (Math.abs(dx) < 12 && Math.abs(dy) < 12) return;
       // מחליטים פעם אחת: תנועה אופקית = מחיקה, אנכית = גלילה רגילה
       decided = true;
+      if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
       if (Math.abs(dx) < Math.abs(dy) * 1.3) { cleanup(); return; }
+      if (SELECT_MODE) return;   // במצב בחירה לא מוחקים בגרירה
       active = true;
+      // תופסים את המצביע רק אחרי שהחלטנו שזו גרירה — אחרת לחיצה רגילה
+      // לא מגיעה ל-[data-edit] והגיליון לא נפתח.
+      try { card.setPointerCapture(e.pointerId); } catch (err) {}
       card.classList.add('striking');
       line = document.createElement('div');
       line.className = 'strike-line';
@@ -2160,11 +2198,19 @@ function enableStrikeDelete(card) {
     pid = e.pointerId;
     startX = e.clientX; startY = e.clientY;
     decided = false; active = false; crossed = false;
-    // תופס את המצביע כדי שכל האירועים שלו יגיעו אלינו ולא יתפזרו
-    try { card.setPointerCapture(e.pointerId); } catch (err) {}
     document.addEventListener('pointermove', onMove, { passive: false });
     document.addEventListener('pointerup', onUp);
     document.addEventListener('pointercancel', onUp);
+    // לחיצה ארוכה נכנסת לבחירה מרובה בלי לפתוח את הגיליון
+    holdTimer = setTimeout(() => {
+      holdTimer = null;
+      if (decided || active) return;
+      suppressTaskClick = true;
+      setTimeout(() => { suppressTaskClick = false; }, 500);
+      buzz(12);
+      toggleSelected(id);
+      cleanup();
+    }, 420);
   });
 }
 
@@ -2181,6 +2227,190 @@ async function strikeDeleteTask(id, card) {
     label: 'ביטול',
     fn: () => { buzz(6); updateTask(id, { status: prevStatus }); },
   }]);
+}
+
+/* ============ בחירה מרובה ============ */
+
+function selectedIds() { return [...SELECTING]; }
+
+function toggleSelected(id) {
+  id = +id;
+  if (!id) return;
+  SELECT_MODE = true;
+  if (SELECTING.has(id)) SELECTING.delete(id);
+  else SELECTING.add(id);
+  const card = $(`.task-card[data-task="${id}"]`);
+  if (card) card.classList.toggle('selected', SELECTING.has(id));
+  syncBulkBar();
+}
+
+function exitSelect() {
+  SELECT_MODE = false;
+  SELECTING.clear();
+  $$('.task-card.selected').forEach(c => c.classList.remove('selected'));
+  syncBulkBar();
+}
+
+function enterSelectMode() {
+  if (!['now', 'projects', 'all'].includes(VIEW)) {
+    toast('בחירה מרובה עובדת בעכשיו, בפרויקטים ובכל');
+    return;
+  }
+  SELECT_MODE = true;
+  syncBulkBar();
+  toast('לחצי על משימות לבחירה · לחיצה ארוכה גם נכנסת לבחירה');
+}
+
+function syncBulkBar() {
+  const bar = $('#bulk-bar');
+  if (!bar) return;
+  const on = SELECT_MODE;
+  const n = SELECTING.size;
+  bar.classList.toggle('hidden', !on);
+  $('#app').classList.toggle('selecting', on);
+  const btn = $('#btn-select');
+  if (btn) btn.classList.toggle('on', on);
+  const count = $('#bulk-count');
+  if (count) count.textContent = n ? (n === 1 ? 'משימה אחת' : n + ' משימות') : 'בחרי משימות';
+  ['bulk-complete', 'bulk-edit', 'bulk-drop'].forEach(id => {
+    const b = $('#' + id);
+    if (b) b.disabled = !n;
+  });
+}
+
+async function runOps(ops, okMsg) {
+  try {
+    await api('ops', { ops });
+    if (okMsg) toast(okMsg);
+  } catch (e) {
+    if (e.isNetwork) {
+      OFFLINE = true;
+      queuePush('ops', { ops });
+      updateOfflineBadge();
+      toast('נשמר במכשיר — יסונכרן כשתחזור הרשת');
+    } else {
+      toast('אופס — ' + e.message);
+      await reload();
+    }
+  }
+}
+
+async function bulkComplete() {
+  const ids = selectedIds();
+  if (!ids.length) return;
+  const now = new Date().toISOString().slice(0, 19).replace('T', ' ');
+  ids.forEach(id => {
+    const t = DATA.tasks.find(x => x.id == id);
+    if (t) { t.status = 'done'; t.completed_at = now; t.is_next = 0; }
+  });
+  exitSelect();
+  saveCache();
+  render();
+  confetti(120);
+  await runOps(ids.map(id => ({ action: 'task_complete', id })),
+    ids.length === 1 ? 'בוצעה!' : ids.length + ' בוצעו!');
+}
+
+async function bulkDrop() {
+  const ids = selectedIds();
+  if (!ids.length) return;
+  const backups = ids.map(id => {
+    const t = DATA.tasks.find(x => x.id == id);
+    return t ? { id, status: t.status } : null;
+  }).filter(Boolean);
+  ids.forEach(id => {
+    const t = DATA.tasks.find(x => x.id == id);
+    if (t) t.status = 'dropped';
+  });
+  exitSelect();
+  saveCache();
+  render();
+  await runOps(ids.map(id => ({ action: 'task_update', id, status: 'dropped' })));
+  toastActions(ids.length === 1 ? 'נמחקה' : ids.length + ' נמחקו', [{
+    label: 'ביטול',
+    fn: async () => {
+      backups.forEach(({ id, status }) => {
+        const t = DATA.tasks.find(x => x.id == id);
+        if (t) t.status = status;
+      });
+      saveCache();
+      render();
+      await runOps(backups.map(({ id, status }) => ({ action: 'task_update', id, status })));
+    },
+  }]);
+}
+
+function openBulkEditModal() {
+  const ids = selectedIds();
+  if (!ids.length) return;
+  const chipRow = (field, dict, useShort = false) => Object.entries(dict).map(([k, v]) => `
+    <button class="chip c-${v.color}" data-bulk-chip="${field}" data-val="${k}">
+      ${ic(v.icon || 'check', 14)}${useShort ? v.short : v.label}
+    </button>`).join('');
+
+  openModal(`
+    <h3>${ic('settings', 20)} הגדרות ל-${ids.length} משימות</h3>
+    <p style="color:var(--ink-soft);font-size:.85rem;margin-bottom:14px">רק מה שתבחרי ישתנה. השאר יישאר כמו שהוא.</p>
+    <div class="field">
+      <div class="field-label">${ic('listTodo', 13)} סטטוס</div>
+      <div class="chips">${Object.entries(STATUS).filter(([k]) => k !== 'done').map(([k, v]) => `
+        <button class="chip c-${v.color === 'gray' ? 'sky' : v.color}" data-bulk-chip="status" data-val="${k}">${v.label}</button>`).join('')}
+      </div>
+    </div>
+    <div class="field">
+      <div class="field-label">${ic('folder', 13)} פרויקט</div>
+      <select id="bulk-project">
+        <option value="__keep">לא לשנות</option>
+        <option value="">בלי פרויקט</option>
+        ${DATA.projects.filter(p => ['active', 'someday'].includes(p.status)).map(p =>
+          `<option value="${p.id}">${esc(p.name)}</option>`).join('')}
+      </select>
+    </div>
+    <div class="field">
+      <div class="field-label">${ic('mapPin', 13)} איפה זה קורה</div>
+      <div class="chips">${chipRow('context', CONTEXTS)}</div>
+    </div>
+    <div class="field">
+      <div class="field-label">${ic('zap', 13)} כמה אנרגיה זה דורש</div>
+      <div class="chips">${chipRow('energy', ENERGY, true)}</div>
+    </div>
+    <div class="field">
+      <div class="field-label">${ic('clock', 13)} כמה זמן / גודל</div>
+      <div class="chips">${chipRow('size', SIZE)}</div>
+    </div>
+    <div class="sheet-actions">
+      <button class="btn btn-ghost" id="bulk-edit-cancel">ביטול</button>
+      <button class="btn btn-primary" id="bulk-edit-save">החלה על כולן</button>
+    </div>`);
+
+  const fields = {};
+  $$('#modal [data-bulk-chip]').forEach(b => b.onclick = () => {
+    const field = b.dataset.bulkChip, val = b.dataset.val;
+    const turningOff = fields[field] === val;
+    if (turningOff) delete fields[field];
+    else fields[field] = val;
+    $$(`#modal [data-bulk-chip="${field}"]`).forEach(x => x.classList.toggle('on', !turningOff && x.dataset.val === val));
+  });
+  $('#bulk-edit-cancel').onclick = closeModal;
+  $('#bulk-edit-save').onclick = async () => {
+    const proj = $('#bulk-project').value;
+    if (proj !== '__keep') fields.project_id = proj === '' ? null : +proj;
+    if (!Object.keys(fields).length) { toast('לא נבחר מה לשנות'); return; }
+    closeModal();
+    await bulkApply(ids, fields);
+  };
+}
+
+async function bulkApply(ids, fields) {
+  ids.forEach(id => {
+    const t = DATA.tasks.find(x => x.id == id);
+    if (t) Object.assign(t, fields);
+  });
+  exitSelect();
+  saveCache();
+  render();
+  await runOps(ids.map(id => ({ action: 'task_update', id, ...fields })),
+    ids.length === 1 ? 'עודכנה' : ids.length + ' עודכנו');
 }
 
 /* ---------- פופ־אובר דחייה ---------- */
@@ -3089,13 +3319,23 @@ setInterval(() => {
 
 $('#btn-search').innerHTML = ic('search', 19);
 $('#btn-search').onclick = openSearchModal;
+$('#btn-select').innerHTML = ic('checkSquare', 19);
+$('#btn-select').onclick = () => { SELECT_MODE ? exitSelect() : enterSelectMode(); };
+$('#bulk-complete').innerHTML = ic('check', 16) + ' בוצע';
+$('#bulk-edit').innerHTML = ic('settings', 16) + ' הגדרות';
+$('#bulk-drop').innerHTML = ic('trash', 16);
+$('#bulk-cancel').innerHTML = ic('x', 16);
+$('#bulk-complete').onclick = bulkComplete;
+$('#bulk-edit').onclick = openBulkEditModal;
+$('#bulk-drop').onclick = bulkDrop;
+$('#bulk-cancel').onclick = exitSelect;
 $('#btn-history').innerHTML = ic('history', 19);
 $('#btn-history').onclick = openHistoryModal;
 $('#btn-settings').innerHTML = ic('settings', 19);
 $('#btn-settings').onclick = openSettingsModal;
 
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') { closeSheet(); closeModal(); closeDeferPop(); }
+  if (e.key === 'Escape') { exitSelect(); closeSheet(); closeModal(); closeDeferPop(); }
   // Ctrl/Cmd+K או "/" פותחים חיפוש — אבל לא בזמן הקלדה בשדה
   const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName || '');
   if (((e.key === 'k' || e.key === 'K') && (e.ctrlKey || e.metaKey)) || (e.key === '/' && !typing)) {

@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Varela+Round&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=22">
+<link rel="stylesheet" href="css/style.css?v=23">
 </head>
 <body>
 
@@ -42,6 +42,7 @@
     </div>
     <nav class="topnav" id="topnav"></nav>
     <div class="topbar-actions">
+      <button class="icon-btn" id="btn-select" title="בחירה מרובה"></button>
       <button class="icon-btn" id="btn-search" title="חיפוש בכל המערכת"></button>
       <button class="icon-btn" id="btn-history" title="היסטוריה"></button>
       <button class="icon-btn" id="btn-settings" title="הגדרות"></button>
@@ -63,6 +64,17 @@
   <nav class="bottomnav" id="bottomnav"></nav>
 
   <button class="fab" id="fab" title="משימה חדשה"></button>
+
+  <!-- סרגל פעולות על כמה משימות שנבחרו -->
+  <div class="bulk-bar hidden" id="bulk-bar">
+    <span class="bulk-count" id="bulk-count"></span>
+    <div class="bulk-actions">
+      <button class="btn btn-primary" id="bulk-complete" title="סימון כבוצע"></button>
+      <button class="btn btn-ghost" id="bulk-edit" title="הגדרות לכולן"></button>
+      <button class="btn btn-danger" id="bulk-drop" title="מחיקה"></button>
+      <button class="btn btn-ghost" id="bulk-cancel" title="ביטול בחירה"></button>
+    </div>
+  </div>
 </div>
 
 <!-- גיליון עריכת משימה -->
@@ -77,7 +89,7 @@
 <div id="toast" class="toast hidden"></div>
 <canvas id="confetti-canvas"></canvas>
 
-<script src="js/app.js?v=22"></script>
+<script src="js/app.js?v=23"></script>
 <script>
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js').catch(function(){});

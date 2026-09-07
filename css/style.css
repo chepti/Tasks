@@ -112,6 +112,8 @@ textarea { resize: vertical; min-height: 70px; }
   transition: transform .12s, color .15s;
 }
 .icon-btn:hover { color: var(--coral); transform: scale(1.06); }
+.icon-btn.on { color: #6A58E0; background: var(--lilac-soft); }
+.bulk-bar .btn:disabled { opacity: .4; pointer-events: none; }
 
 /* ============ מסך כניסה ============ */
 
@@ -211,6 +213,47 @@ textarea { resize: vertical; min-height: 70px; }
 }
 .fab:hover { transform: scale(1.08) rotate(90deg); }
 @media (min-width: 800px) { .fab { bottom: 28px; left: 28px; } }
+.app.selecting .fab { display: none; }
+
+/* סרגל bulk — מעל הניווט התחתון, מוסתר כשאין בחירה */
+.bulk-bar {
+  position: fixed;
+  z-index: 45;
+  right: 12px; left: 12px;
+  bottom: calc(var(--nav-h) + 10px + env(safe-area-inset-bottom));
+  background: rgba(255,255,255,.96);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-radius: 22px;
+  box-shadow: var(--shadow-lg);
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.bulk-bar .bulk-count {
+  font-weight: 600;
+  padding: 0 8px;
+  color: #6A58E0;
+  white-space: nowrap;
+}
+.bulk-bar .bulk-actions {
+  display: flex; gap: 6px; flex: 1; justify-content: flex-end; flex-wrap: wrap;
+}
+.bulk-bar .btn { padding: 8px 14px; font-size: .85rem; }
+.app.selecting .toast {
+  bottom: calc(var(--nav-h) + 90px + env(safe-area-inset-bottom));
+}
+@media (min-width: 800px) {
+  .bulk-bar {
+    bottom: 24px;
+    max-width: 760px;
+    width: calc(100% - 48px);
+    margin: 0 auto;
+  }
+  .app.selecting .toast { bottom: 100px; }
+}
 
 /* ============ צ'יפים ופילים ============ */
 
@@ -1069,6 +1112,11 @@ button.chip:hover { transform: translateY(-1px); border-color: var(--ink-soft); 
 
 /* קו העיפרון בגרירה */
 .task-card { position: relative; overflow: hidden; }
+.task-card.selected {
+  outline: 2.5px solid var(--lilac);
+  background: var(--lilac-soft);
+  box-shadow: 0 0 0 4px rgba(155, 140, 255, .2);
+}
 .task-card.striking { touch-action: pan-y; cursor: grabbing; }
 .strike-line {
   position: absolute;
@@ -1205,7 +1253,7 @@ button.chip:hover { transform: translateY(-1px); border-color: var(--ink-soft); 
 .item-check:hover { border-color: var(--teal); background: var(--teal-soft); color: var(--teal); }
 .item-check.checked { border-color: var(--teal); background: var(--teal); color: #fff; }
 
-.item-main { flex: 1; min-width: 0; }
+.item-main { flex: 1; min-width: 0; cursor: text; }
 
 /* min-height כאן חובה — כלל ה-textarea הגלובלי (70px) היה מנפח כל שורה */
 .item-title, .item-body {
@@ -1217,6 +1265,7 @@ button.chip:hover { transform: translateY(-1px); border-color: var(--ink-soft); 
   border-radius: 8px;
   resize: none; overflow: hidden;
   font-size: .92rem; line-height: 1.4;
+  cursor: text;
 }
 .item-title:focus, .item-body:focus { background: #fff; border-color: transparent; outline: 2px solid var(--lilac-soft); }
 .item-row.is-done .item-title { text-decoration: line-through; color: var(--ink-soft); }
@@ -1240,6 +1289,16 @@ button.chip:hover { transform: translateY(-1px); border-color: var(--ink-soft); 
   margin: 1px 0 4px;
 }
 .body-box.is-prompt { background: var(--peach-soft); }
+.body-box.is-empty:not(:focus-within):not(.expanded) {
+  background: transparent;
+  padding: 0 8px;
+}
+.body-box.is-empty:not(:focus-within):not(.expanded) .body-btns { display: none; }
+.body-box.is-empty:not(:focus-within):not(.expanded) .item-body {
+  height: 22px !important;
+  min-height: 22px;
+  color: var(--ink-faint);
+}
 .body-box .item-body { font-size: .85rem; overflow: hidden; }
 .body-box.is-prompt .item-body { color: #7A4A12; }
 .body-box .item-body:focus { background: rgba(255,255,255,.8); }

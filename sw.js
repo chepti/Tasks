@@ -1,6 +1,6 @@
 /* Service Worker — מעטפת מהקאש, נתונים תמיד מהרשת.
    מביא את קבצי המעטפת עם revalidation (bypass ל-HTTP cache) כדי שעדכונים יתפשטו אמין. */
-const CACHE = 'tasks-shell-v4';
+const CACHE = 'tasks-shell-v5';
 const SHELL = [
   './',
   'index.html',
