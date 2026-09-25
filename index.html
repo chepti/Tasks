@@ -25,6 +25,8 @@
     <h1>המשימות שלי</h1>
     <p class="login-sub">מה עושים עכשיו?</p>
     <form id="login-form">
+      <!-- שם משתמש קבוע ונסתר: כדי שהדפדפן ישמור את הסיסמה בנפרד משאר האפליקציות ב-chepti.com -->
+      <input type="text" name="username" autocomplete="username" value="tasks" readonly style="display:none">
       <input type="password" id="login-password" placeholder="סיסמה" autocomplete="current-password">
       <button type="submit" class="btn btn-primary btn-lg">כניסה</button>
     </form>
