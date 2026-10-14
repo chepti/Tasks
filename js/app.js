@@ -988,6 +988,7 @@ function renderTrainings() {
       ${next.slides_url ? `<button class="btn btn-ghost hero-btn" data-copy="${esc(next.slides_url)}">${ic('monitor', 15)} העתקת מצגת</button>` : ''}
       ${next.recording_url ? `<button class="btn btn-ghost hero-btn" data-copy="${esc(next.recording_url)}">${ic('mic', 15)} העתקת הקלטה</button>` : ''}
       ${gcalUrl(next) ? `<a class="btn btn-ghost hero-btn" href="${gcalUrl(next)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${ic('calendar', 15)} הוספה ליומן גוגל</a>` : ''}
+      <button class="btn btn-ghost hero-btn" data-copytraining="${next.id}" title="כל הפרטים כטקסט מסודר">${ic('copy', 15)} העתקת הכל</button>
     </div>
   </div>` : '';
 
@@ -1037,8 +1038,8 @@ async function saveTraining(payload, { quiet = false } = {}) {
   render();
 }
 
-function copyText(text) {
-  const done = () => toast('הועתק!');
+function copyText(text, msg) {
+  const done = () => toast(msg || 'הועתק!');
   if (navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(text).then(done).catch(() => fallbackCopy(text, done));
   } else fallbackCopy(text, done);
@@ -1051,6 +1052,77 @@ function fallbackCopy(text, done) {
   ta.select();
   try { document.execCommand('copy'); done(); } catch (e) {}
   ta.remove();
+}
+
+/* ============ העתקה חכמה ============ */
+/* טקסט מתויג ודחוס להדבקה בשיחה עם בינה: שדות קרובים מתאחדים לשורה אחת עם
+   פסיקים, וקבוצות נפרדות מופרדות בנקודה-פסיק. שדות ריקים פשוט לא מופיעים. */
+
+function fmtTrainingDate(t) {
+  if (!t.date) return '';
+  const d = new Date(t.date + 'T12:00:00');
+  const day = 'יום ' + DAY_NAMES[d.getDay()];
+  const date = `${d.getDate()}.${d.getMonth() + 1}.${d.getFullYear()}`;
+  const hours = t.time_from ? `${t.time_from}${t.time_to ? '–' + t.time_to : ''}` : '';
+  return [day, date, hours].filter(Boolean).join(', ');
+}
+
+function trainingToText(t, fu) {
+  const L = [];
+  const add = (label, val) => { if (val) L.push(`${label}: ${val}`); };
+  const join = (arr, sep = ', ') => arr.filter(x => x && String(x).trim()).join(sep);
+
+  add('הדרכה', t.topic);
+  add('מתי', fmtTrainingDate(t));
+  add('איפה', join([t.place, TMODE[t.mode]?.label], ' — '));
+  add('איש קשר', join([t.contact_name, t.contact_role, t.contact_phone, t.contact_email]));
+  add('תשלום', join([
+    t.pay_amount, t.pay_process,
+    t.pay_amount || t.pay_process ? (t.pay_received == 1 ? 'התקבל' : 'טרם התקבל') : '',
+  ], '; '));
+  add('קהל', join([t.people_count ? t.people_count + ' משתתפים' : '', t.audience], '; '));
+  add('סגנון', t.style);
+  add('רעיונות', t.ideas);
+  add('כלים', t.tools);
+  add('מסר מרכזי', t.message);
+  add('מבנה', t.structure);
+  add('ציוד למורים', t.equipment);
+  add('קישורים', join([
+    t.slides_url ? 'מצגת ' + t.slides_url : '',
+    t.recording_url ? 'הקלטה ' + t.recording_url : '',
+  ], '; '));
+
+  const list = fu || fuList(t);
+  const didDone = list.filter(f => f.done == 1).map(f => f.label);
+  const todo = list.filter(f => f.done != 1).map(f => f.label);
+  add('פעולות משלימות', join([
+    didDone.length ? 'בוצע — ' + didDone.join(', ') : '',
+    todo.length ? 'ממתין — ' + todo.join(', ') : '',
+  ], '; '));
+  add('הערות', t.notes);
+
+  return L.join('\n');
+}
+
+function taskToText(t) {
+  const p = projectOf(t);
+  const L = [];
+  const add = (label, val) => { if (val) L.push(`${label}: ${val}`); };
+  add('משימה', t.title);
+  add('פרויקט', p ? p.name : '');
+  add('סטטוס', join_([STATUS[t.status]?.label, t.is_next == 1 ? 'מסומנת לעכשיו' : '']));
+  add('תיוג', join_([CONTEXTS[t.context]?.label, ENERGY[t.energy]?.label, SIZE[t.size] ? 'גודל ' + SIZE[t.size].label : '']));
+  add('תאריך יעד', t.due_date ? fmtTrainingDate({ date: t.due_date }) : '');
+  add('הערות', t.notes);
+  return L.join('\n');
+  function join_(a) { return a.filter(x => x && String(x).trim()).join(', '); }
+}
+
+/** מעתיק ומדווח כמה שדות נכנסו, כדי שיהיה ברור שזה תפס. */
+function copySmart(text, what) {
+  if (!text || !text.trim()) { toast('אין מה להעתיק עדיין'); return; }
+  const n = text.split('\n').length;
+  copyText(text, `${what} — ${n} שדות הועתקו`);
 }
 
 /* ---------- גיליון עריכת הדרכה ---------- */
@@ -1086,7 +1158,10 @@ function openTrainingSheet(id) {
     <div class="sheet-topbar">
       <button class="corner-btn" id="ts-cancel" title="סגירה">${ic('x', 18)}</button>
       <h3>${id != null ? 'עריכת הדרכה' : 'הדרכה חדשה'}</h3>
-      ${id != null ? `<button class="corner-btn danger" id="ts-delete" title="מחיקה">${ic('trash', 17)}</button>` : '<span style="width:38px"></span>'}
+      <div class="corner-group">
+        <button class="corner-btn" id="ts-copyall" title="העתקת כל הפרטים — להדבקה בשיחה עם הבינה">${ic('copy', 17)}</button>
+        ${id != null ? `<button class="corner-btn danger" id="ts-delete" title="מחיקה">${ic('trash', 17)}</button>` : ''}
+      </div>
     </div>
     <div id="ts-draft-slot"></div>
 
@@ -1295,6 +1370,10 @@ function openTrainingSheet(id) {
       toast('הטיוטה נמחקה — חזרנו למה שנשמר');
     };
   }
+
+  // העתקה חכמה: לוקחת את מה שעל המסך ברגע זה (גם אם עוד לא נשמר)
+  $('#ts-copyall').onclick = () =>
+    copySmart(trainingToText({ ...t, ...collectTraining() }, fu), 'פרטי ההדרכה');
 
   $('#ts-cancel').onclick = () => closeSheet();
   $('#sheet-backdrop').onclick = backdropClose;
@@ -2099,12 +2178,17 @@ function bindMain() {
   });
   // הדרכות
   $$('[data-tedit]').forEach(el => el.onclick = e => {
-    if (e.target.closest('[data-copy],[data-pay],[data-fu],a')) return;
+    if (e.target.closest('[data-copy],[data-copytraining],[data-pay],[data-fu],a')) return;
     openTrainingSheet(el.dataset.tedit);
   });
   $$('[data-copy]').forEach(b => b.onclick = e => {
     e.stopPropagation();
     copyText(b.dataset.copy);
+  });
+  $$('[data-copytraining]').forEach(b => b.onclick = e => {
+    e.stopPropagation();
+    const t = trainingsList().find(x => x.id == b.dataset.copytraining);
+    if (t) copySmart(trainingToText(t), 'פרטי ההדרכה');
   });
   $$('[data-pay]').forEach(b => b.onclick = e => {
     e.stopPropagation();
@@ -2604,6 +2688,7 @@ function openTaskSheet(id, prefill = null) {
     </button>` : ''}
     <div class="sheet-actions">
       ${!isNew ? `<button class="btn btn-danger" id="sheet-delete" title="מחיקה">${ic('trash', 17)}</button>` : ''}
+      <button class="btn btn-ghost" id="sheet-copyall" title="העתקת כל הפרטים — להדבקה בשיחה עם הבינה">${ic('copy', 16)}</button>
       <button class="btn btn-ghost" id="sheet-cancel">ביטול</button>
       <button class="btn btn-primary" id="sheet-save">${isNew ? 'הוספה' : 'שמירה'}</button>
     </div>`;
@@ -2660,6 +2745,10 @@ function openTaskSheet(id, prefill = null) {
       };
     }
   }
+
+  // העתקה חכמה: לוקחת את מה שעל המסך ברגע זה (גם אם עוד לא נשמר)
+  $('#sheet-copyall').onclick = () =>
+    copySmart(taskToText({ ...t, ...collectTask() }), 'פרטי המשימה');
 
   $('#sheet-cancel').onclick = () => closeSheet();
   $('#sheet-backdrop').onclick = backdropClose;

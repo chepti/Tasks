@@ -851,6 +851,8 @@ button.chip:hover { transform: translateY(-1px); border-color: var(--ink-soft); 
 }
 .corner-btn:hover { transform: scale(1.06); }
 .corner-btn.danger { color: #D8402F; background: var(--coral-soft); }
+/* כמה כפתורי פינה יחד (העתקה + מחיקה) בלי לשבור את מרכוז הכותרת */
+.corner-group { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 
 .sheet-divider {
   display: flex; align-items: center; gap: 10px;
