@@ -381,19 +381,21 @@ button.chip:hover { transform: translateY(-1px); border-color: var(--ink-soft); 
   line-height: 1;
 }
 
-.task-side { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+/* כוכב וירח זה לצד זה בסוף השורה, בגודל של עיגול הביצוע — קל ללחוץ בטלפון */
+.task-side { display: flex; flex-direction: row; align-items: center; gap: 6px; margin-top: 2px; }
 
-.star-btn { color: var(--ink-faint); transition: color .15s, transform .15s; padding: 4px; }
-.star-btn:hover { transform: scale(1.15); }
-.star-btn.on { color: var(--peach); }
-
-.defer-btn {
+.star-btn, .defer-btn {
+  width: 30px; height: 30px;
+  min-width: 30px;
+  padding: 0;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
   color: var(--ink-faint);
-  padding: 4px;
-  border-radius: var(--r-pill);
-  transition: color .15s;
+  transition: color .15s, transform .15s, background .15s;
 }
-.defer-btn:hover { color: var(--lilac); }
+.star-btn:hover { transform: scale(1.12); background: var(--peach-soft); color: var(--peach); }
+.star-btn.on { color: var(--peach); }
+.defer-btn:hover { transform: scale(1.12); background: var(--lilac-soft); color: var(--lilac); }
 
 /* פופ־אובר "לא מתאים עכשיו" */
 .defer-pop {
@@ -1098,6 +1100,16 @@ button.chip:hover { transform: translateY(-1px); border-color: var(--ink-soft); 
 .pinned-list .task-card {
   background: linear-gradient(135deg, #fff, var(--peach-soft));
   border: 2px solid var(--peach);
+}
+
+/* תגית שאפשר ללחוץ עליה (למשל "X ישנות" שקופצת לארכיון) */
+.tag-btn { font-family: inherit; cursor: pointer; border: none; }
+.tag-btn:hover { background: var(--lilac-soft); color: var(--lilac); }
+
+/* ארכיון משימות ללא פרויקט — נוכח בלשונית הפרויקטים, אבל לא צועק */
+.archive-card { background: var(--bg-soft); box-shadow: none; border: 1.5px dashed var(--ink-faint); }
+.archive-card .project-name {
+  display: inline-flex; align-items: center; gap: 7px; color: var(--ink-soft);
 }
 
 /* משימות בלי פרויקט אב */

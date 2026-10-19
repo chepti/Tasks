@@ -37,6 +37,7 @@ function ic(name, size = 20) {
     partyPopper: '<path d="M5.8 11.3 2 22l10.7-3.79"/><path d="M4 3h.01"/><path d="M22 8h.01"/><path d="M15 2h.01"/><path d="M22 20h.01"/><path d="m22 2-2.24.75a2.9 2.9 0 0 0-1.96 3.12c.1.86-.57 1.63-1.45 1.63h-.38c-.86 0-1.6.6-1.76 1.44L14 10"/><path d="m22 13-.82-.33c-.86-.34-1.82.2-1.98 1.11c-.11.7-.72 1.22-1.43 1.22H17"/><path d="m11 2 .33.82c.34.86-.2 1.82-1.11 1.98C9.52 4.9 9 5.52 9 6.23V7"/><path d="M11 13c1.93 1.93 2.83 4.17 2 5-.83.83-3.07-.07-5-2-1.93-1.93-2.83-4.17-2-5 .83-.83 3.07.07 5 2Z"/>',
     rotateCcw: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>',
     listTodo: '<rect x="3" y="5" width="6" height="6" rx="1"/><path d="m3 17 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/>',
+    archive: '<rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/>',
     hourglass: '<path d="M5 22h14"/><path d="M5 2h14"/><path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22"/><path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/>',
     cloudSun: '<path d="M12 2v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="M20 12h2"/><path d="m19.07 4.93-1.41 1.41"/><path d="M15.947 12.65a4 4 0 0 0-5.925-4.128"/><path d="M13 22H7a5 5 0 1 1 4.9-6H13a3 3 0 0 1 0 6Z"/>',
     heart: '<path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/>',
@@ -113,6 +114,7 @@ let SHOW_FINISHED_TRAININGS = false;
 let OPEN_APPS = new Set();        // אילו כרטיסי אפליקציה פתוחים
 let SHOW_DONE_ITEMS = new Set();  // באילו אפליקציות מוצגים גם הפריטים שבוצעו
 let EXPANDED_PROMPTS = new Set(); // פרומפטים ארוכים שנפרשו במלואם
+let SHOW_ORPHAN_ARCHIVE = false;  // ארכיון המשימות הישנות שאין להן פרויקט
 let SHOW_DONE_APPS = false;       // האם להציג את האפליקציות שהושלמו
 let SHOW_ORPHANS = false;         // האם לפתוח את רשימת המשימות בלי פרויקט אב
 let SHOW_DONE_TASKS = new Set();  // באילו פרויקטים מוצגות גם המשימות שבוצעו
@@ -430,6 +432,29 @@ function draftTasks() { return DATA.tasks.filter(t => t.status === 'draft'); }
 function isSnoozed(t) {
   return t.snoozed_until && parseUTC(t.snoozed_until) > new Date();
 }
+
+/* משימה שעברו שבועיים מאז שנוצרה יורדת מ"עכשיו" — היא לא באמת "עכשיו" יותר.
+   היא נשארת בפרויקט שלה; אם אין לה פרויקט היא נאספת לארכיון בלשונית פרויקטים.
+   כוכב עוקף את זה, כי כוכב = "כן, דווקא עכשיו". */
+const STALE_DAYS = 14;
+function taskAgeDays(t) {
+  const d = parseUTC(t.created_at);
+  return d ? Math.floor((Date.now() - d.getTime()) / 86400000) : 0;
+}
+function isStale(t) { return taskAgeDays(t) >= STALE_DAYS; }
+/* ניסוח בעברית תקינה גם ביחיד — "משימה אחת ישנה" ולא "1 משימות ישנות" */
+const stalePhrase = {
+  badge: n => n === 1 ? 'משימה אחת ישנה משבועיים' : `${n} משימות ישנות משבועיים`,
+  waiting: n => n === 1
+    ? 'משימה אחת ישנה מחכה בפרויקט שלה'
+    : `${n} משימות ישנות מחכות בפרויקטים שלהן`,
+  archive: n => n === 1
+    ? 'משימה אחת שעברה שבועיים ולא קרתה'
+    : `${n} משימות שעברו שבועיים ולא קרו`,
+};
+function staleOrphans() {
+  return openTasks().filter(t => !t.project_id && isStale(t) && t.is_next != 1);
+}
 function doneTasks() {
   return DATA.tasks.filter(t => t.status === 'done' && t.completed_at)
     .sort((a, b) => b.completed_at.localeCompare(a.completed_at));
@@ -568,9 +593,9 @@ function taskCard(t, { defer = false, withProject = true } = {}) {
     </div>
     <div class="task-side">
       <button class="star-btn ${t.is_next == 1 ? 'on' : ''}" data-star="${t.id}" title="המשימה הבאה">
-        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="${t.is_next == 1 ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${'<path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z"/>'}</svg>
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="${t.is_next == 1 ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${'<path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z"/>'}</svg>
       </button>
-      ${defer ? `<button class="defer-btn" data-defer="${t.id}" title="לא מתאים עכשיו">${ic('moon', 18)}</button>` : ''}
+      ${defer ? `<button class="defer-btn" data-defer="${t.id}" title="לא מתאים עכשיו">${ic('moon', 20)}</button>` : ''}
     </div>
   </div>`;
 }
@@ -593,6 +618,7 @@ function nowMatches(t) {
   if (projectHidesLists(p)) return false;
   // כוכב = "ממש לעכשיו", ולכן עוקף את סינון הימים ואת הסינון הידני — אבל לא פרויקט-רעיון
   if (t.is_next == 1) return true;
+  if (isStale(t)) return false;
   if (!projectActiveToday(t)) return false;
   const f = NOW_FILTER;
   if (f.context && t.context && t.context !== f.context) return false;
@@ -617,12 +643,13 @@ function renderNow() {
   const tasks = open.filter(nowMatches).sort(byPriority);
   const pinned = tasks.filter(t => t.is_next == 1);
   const rest = tasks.filter(t => t.is_next != 1);
-  // כמה הוסתרו כי הפרויקט שלהן לא אקטיבי היום — כדי שלא יהיה תחושה שדברים נעלמו
-  const hiddenByDay = open.filter(t =>
+  // כמה הוסתרו ולמה — כדי שלא תהיה תחושה שדברים נעלמו בלי סיבה
+  const live = open.filter(t =>
     t.is_next != 1 && !isSnoozed(t) &&
     !['done', 'dropped', 'draft', 'someday', 'waiting', 'never'].includes(t.status) &&
-    !projectHidesLists(projectOf(t)) &&
-    !projectActiveToday(t)).length;
+    !projectHidesLists(projectOf(t)));
+  const hiddenStale = live.filter(isStale).length;
+  const hiddenByDay = live.filter(t => !isStale(t) && !projectActiveToday(t)).length;
 
   const filtersOn = f.context || f.energy || f.size;
 
@@ -661,13 +688,17 @@ function renderNow() {
   ` : ''}
 
   ${rest.length ? `
-    <div class="section-title">${filtersOn ? 'מתאים לך עכשיו' : 'כל מה שפתוח'} <span class="count">${rest.length}</span>${hiddenByDay ? `<span class="tag t-gray">${ic('calendar', 11)}${hiddenByDay} מוסתרות לפי ימי הפרויקט</span>` : ''}</div>
+    <div class="section-title">${filtersOn ? 'מתאים לך עכשיו' : 'כל מה שפתוח'} <span class="count">${rest.length}</span>${hiddenByDay ? `<span class="tag t-gray">${ic('calendar', 11)}${hiddenByDay} מוסתרות לפי ימי הפרויקט</span>` : ''}${hiddenStale ? `<button class="tag t-gray tag-btn" id="goto-stale" title="בפרויקטים שלהן, או בארכיון משימות ללא פרויקט">${ic('hourglass', 11)}${stalePhrase.badge(hiddenStale)}</button>` : ''}</div>
     <div class="task-list">${rest.map(t => taskCard(t, { defer: true })).join('')}</div>
   ` : (pinned.length ? '' : `
     <div class="empty-state">
       ${ic('coffee', 44)}
       <p>אין כלום שמתאים לסינון הזה</p>
       <p class="sub">אולי זה הזמן להפסקת קפה? מגיע לך</p>
+      ${hiddenStale ? `
+        <button class="btn btn-ghost" id="goto-stale">
+          ${ic('hourglass', 15)} ${stalePhrase.waiting(hiddenStale)}
+        </button>` : ''}
     </div>
   `)}`;
 }
@@ -748,6 +779,45 @@ function projectCard(p) {
   </div>`;
 }
 
+/* ---------- ארכיון משימות ללא פרויקט ----------
+   משימות ישנות שאין להן פרויקט אב לא נעלמות — הן נאספות לכאן, ואפשר לשייך
+   אותן לפרויקט מתוך הרשימה או לפתוח אותן לעריכה. */
+function orphanArchiveCard() {
+  const list = staleOrphans().sort((a, b) => taskAgeDays(b) - taskAgeDays(a));
+  if (!list.length) return '';
+  const isOpen = SHOW_ORPHAN_ARCHIVE;
+  return `
+  <div class="card project-card archive-card ${isOpen ? 'open' : ''}">
+    <div class="project-head" data-toggle-archive="1">
+      <span class="project-dot" style="background:var(--ink-faint)"></span>
+      <div style="flex:1;min-width:0">
+        <div class="project-name">${ic('archive', 15)} ארכיון משימות ללא פרויקט</div>
+        <div class="project-meta">
+          ${stalePhrase.archive(list.length)} · לחטט כשבא לך
+        </div>
+      </div>
+      <span class="project-chevron">${ic('chevronDown', 20)}</span>
+    </div>
+    ${isOpen ? `
+      <div class="orphan-list" style="margin-top:12px">
+        ${list.map(t => `
+          <div class="card orphan-row" data-orphan="${t.id}">
+            <div class="orphan-main" data-edit="${t.id}">
+              <div class="task-title">${esc(t.title)}</div>
+              <div class="task-tags">
+                <span class="tag t-gray">${ic('hourglass', 11)}${taskAgeDays(t)} ימים</span>
+                ${taskTags(t, { withProject: false })}
+              </div>
+            </div>
+            <select class="orphan-pick" data-adopt="${t.id}">
+              <option value="">— לשייך לפרויקט —</option>
+              ${liveProjects().map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('')}
+            </select>
+          </div>`).join('')}
+      </div>` : ''}
+  </div>`;
+}
+
 /* ---------- תצוגת פרויקטים ---------- */
 function renderProjects() {
   const active = DATA.projects.filter(p => p.status === 'active');
@@ -768,7 +838,8 @@ function renderProjects() {
   ${never.length ? `
     <div class="section-title">${ic('ban', 18)} כבר לא יקרה <span class="count">${never.length}</span></div>
     <div class="projects-grid">${never.map(projectCard).join('')}</div>
-  ` : ''}`;
+  ` : ''}
+  ${orphanArchiveCard()}`;
 }
 
 /* ---------- תצוגת הכל ---------- */
@@ -2142,6 +2213,16 @@ function bindMain() {
     OPEN_PROJECTS.has(id) ? OPEN_PROJECTS.delete(id) : OPEN_PROJECTS.add(id);
     render();
   });
+  $$('[data-toggle-archive]').forEach(el => el.onclick = () => {
+    SHOW_ORPHAN_ARCHIVE = !SHOW_ORPHAN_ARCHIVE;
+    render();
+  });
+  if ($('#goto-stale')) $('#goto-stale').onclick = () => {
+    VIEW = 'projects';
+    localStorage.setItem('tasks_view', VIEW);
+    SHOW_ORPHAN_ARCHIVE = true;
+    render();
+  };
   $$('[data-edit-project]').forEach(b => b.onclick = e => {
     e.stopPropagation();
     openProjectModal(+b.dataset.editProject);
