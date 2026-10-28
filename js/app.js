@@ -1329,9 +1329,10 @@ function buildWelcome(c) {
     : '';
   const items = [];
   if (c.meet_url) items.push(`קישור למפגשים: ${c.meet_url}`);
-  if (c.classroom_url) items.push(`מרחב מלווה למידה – קלאסרום – בו יהיו ההקלטות, ההודעות והמצגות. לחצו כדי להצטרף, שימו לב שאתן מחוברות למייל שלכן ולא על שם מישהו אחר: ${c.classroom_url}`);
-  items.push('התחברו לאתר השיתוף "חומר פתוח" https://openstuff.co.il/ בעזרת חשבון גוגל שלכם. כאן תגישו את התוצרים ותגיבו לעמיתות.'
-    + (c.group_url ? ` הצטרפו לקבוצה שלנו בפנים כדי שתדעו להגיב אחת לשניה: ${c.group_url}` : ''));
+  // ניסוח לכל הנמענים (לא רק נשים): בלי "אתן", "עמיתות", "אחת לשניה"
+  if (c.classroom_url) items.push(`מרחב מלווה למידה – קלאסרום – בו יהיו ההקלטות, ההודעות והמצגות. לחצו כדי להצטרף, ושימו לב להתחבר עם המייל האישי שלכם ולא עם חשבון של מישהו אחר: ${c.classroom_url}`);
+  items.push('התחברו לאתר השיתוף "חומר פתוח" https://openstuff.co.il/ בעזרת חשבון הגוגל שלכם. כאן תגישו את התוצרים ותגיבו לתוצרים של המשתתפים האחרים.'
+    + (c.group_url ? ` הצטרפו לקבוצה שלנו בפנים, כדי לראות את התוצרים של כולם ולהגיב להם: ${c.group_url}` : ''));
   if (c.syllabus_url) items.push(`הסילבוס של הקורס, שכולל גם את פירוט המטלה: ${c.syllabus_url}`);
   const L = [];
   if (c.number) L.push(`(מס' השתלמות ${c.number})`, '');
@@ -1428,6 +1429,8 @@ function courseSyllabusHtml(c, opts) {
       <span>${!st.total ? 'עוד לא הוזנו מפגשים'
         : allMine ? `כל ${st.total} המפגשים באחריותי`
         : `באחריותי <b>${st.mine}</b> מתוך ${st.total} מפגשים`}${st.hours ? ` · ${st.hours} שעות אקדמיות` : ''}</span>
+      ${c.group_url ? `<button type="button" class="pill-toggle small" data-cm-link="${esc(c.group_url)}" data-msg="קישור הקבוצה בחומר פתוח הועתק" title="העתקת קישור ההצטרפות לקבוצה בחומר פתוח">${ic('users', 13)} חומר פתוח</button>` : ''}
+      ${c.whatsapp_url ? `<button type="button" class="pill-toggle small" data-cm-link="${esc(c.whatsapp_url)}" data-msg="קישור קבוצת הווטסאפ הועתק" title="העתקת קישור ההצטרפות לקבוצת הווטסאפ">${ic('messageCircle', 13)} וואטסאפ</button>` : ''}
       ${anyContent ? `<button type="button" class="pill-toggle small ${COURSE_UI.showContent ? 'on' : ''}" id="cm-content" title="להציג גם את תוכן כל מפגש">${ic('listTodo', 13)} תוכן</button>` : ''}
       <button type="button" class="btn btn-ghost resp-copy" id="cm-copy" title="כל הסילבוס כטקסט, להדבקה בשיחה עם הבינה">${ic('copy', 14)} העתקה</button>
     </div>
@@ -1446,6 +1449,7 @@ function bindCourseSyllabus(c) {
     if (await saveCourse({ id: c.id, notes: ta.value.trim() })) toast('ההערה נשמרה');
   };
   $('#cm-copy').onclick = () => copyText(courseToText(c), 'הסילבוס הועתק');
+  $$('#modal [data-cm-link]').forEach(b => b.onclick = () => copyText(b.dataset.cmLink, b.dataset.msg));
   const tg = $('#cm-content');
   if (tg) tg.onclick = () => { COURSE_UI.showContent = !COURSE_UI.showContent; openCourse(c.id, 'syl', lastCourseOpts); };
   const f = $('#modal tr.focus');
@@ -1612,6 +1616,7 @@ function openCourseEditor(id) {
         ${cell('meet_url', 'קישור למפגשים', 'monitor', '', true)}
         ${cell('classroom_url', 'קלאסרום', 'graduationCap', '', true)}
         ${cell('group_url', 'קבוצה בחומר פתוח', 'users', '', true)}
+        ${cell('whatsapp_url', 'קבוצת וואטסאפ', 'messageCircle', '', true)}
       </div>
       ${divider('calendar', 'מפגשים')}
       <div id="ce-sess" class="ce-sess"></div>
@@ -1681,7 +1686,7 @@ function openCourseEditor(id) {
     const last = $('#ce-sess [data-si]:last-child [data-f="topic"]'); if (last) last.focus();
   };
 
-  const TXT = ['name', 'number', 'summary', 'syllabus_url', 'meet_url', 'classroom_url', 'group_url', 'assignment', 'rubric', 'notes'];
+  const TXT = ['name', 'number', 'summary', 'syllabus_url', 'meet_url', 'classroom_url', 'group_url', 'whatsapp_url', 'assignment', 'rubric', 'notes'];
   const collect = () => {
     const o = {};
     TXT.forEach(f => { const el = $('#ce-' + f); if (el) o[f] = el.value.trim(); });
