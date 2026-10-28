@@ -1334,6 +1334,7 @@ function welcomeMissing(c) {
   if (!c.meet_url) m.push('קישור למפגשים');
   if (!c.classroom_url) m.push('קלאסרום');
   if (!c.group_url) m.push('קבוצה בחומר פתוח');
+  if (!c.whatsapp_url) m.push('קבוצת וואטסאפ');
   if (!c.syllabus_url) m.push('קישור לסילבוס');
   return m;
 }
@@ -1349,6 +1350,7 @@ function buildWelcome(c) {
   if (c.classroom_url) items.push(`מרחב מלווה למידה – קלאסרום – בו יהיו ההקלטות, ההודעות והמצגות. לחצו כדי להצטרף, ושימו לב להתחבר עם המייל האישי שלכם ולא עם חשבון של מישהו אחר: ${c.classroom_url}`);
   items.push('התחברו לאתר השיתוף "חומר פתוח" https://openstuff.co.il/ בעזרת חשבון הגוגל שלכם. כאן תגישו את התוצרים ותגיבו לתוצרים של המשתתפים האחרים.'
     + (c.group_url ? ` הצטרפו לקבוצה שלנו בפנים, כדי לראות את התוצרים של כולם ולהגיב להם: ${c.group_url}` : ''));
+  if (c.whatsapp_url) items.push(`קבוצת הוואטסאפ של ההשתלמות, לעדכונים ושאלות: ${c.whatsapp_url}`);
   if (c.syllabus_url) items.push(`הסילבוס של הקורס, שכולל גם את פירוט המטלה: ${c.syllabus_url}`);
   const L = [];
   if (c.number) L.push(`(מס' השתלמות ${c.number})`, '');
@@ -1502,7 +1504,7 @@ function bindCourseAssignment(c) {
 
 const WELCOME_FIELDS = [
   ['number', "מס' השתלמות", ''], ['meet_url', 'קישור למפגשים', 'ltr'], ['classroom_url', 'קלאסרום', 'ltr'],
-  ['group_url', 'קבוצה בחומר פתוח', 'ltr'], ['syllabus_url', 'קישור לסילבוס', 'ltr'],
+  ['group_url', 'קבוצה בחומר פתוח', 'ltr'], ['whatsapp_url', 'קבוצת וואטסאפ', 'ltr'], ['syllabus_url', 'קישור לסילבוס', 'ltr'],
 ];
 function courseWelcomeHtml(c) {
   const saved = COURSE_UI.welcome[c.id];
