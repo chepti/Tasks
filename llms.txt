@@ -24,6 +24,17 @@
   שדות: `topic, place, date (YYYY-MM-DD), time_from, time_to, contact_name/phone/email/role, pay_amount, pay_process, pay_received, people_count, audience, style, ideas, tools, equipment, structure, message, slides_url, recording_url, fu_recording, fu_whatsapp, fu_takeaways, notes`
 - `POST ?action=training_delete` — `{"id":N}`
 - `?action=state` מחזיר גם `upcoming_trainings` (חמש הקרובות).
+- הדרכה יכולה להיות חלק מהשתלמות: `course_id`, או `"course":"חלק מהשם"` (409 עם מועמדים אם דו-משמעי, `""` מנתק).
+
+## השתלמויות (courses) — סילבוס, מטלה, מחוון, מייל ברוכים הבאים
+- `GET ?action=courses` — רשימה קומפקטית: `id, name, number, sessions, my_sessions, first`.
+- `POST ?action=course_upsert` — עדכון לפי `{"id":N}` / `{"match":"חלק מהשם"}`, אחרת נוצרת חדשה (`name` חובה).
+  שדות: `name, number (מס' השתלמות), summary, sessions, assignment, rubric, syllabus_url, meet_url, classroom_url, group_url, welcome, notes, status`.
+  `sessions` = מערך אמיתי של `{n, date, date_text, from, to, hours, mode: online|physical|async|hybrid, mode_text, topic, content, product, facilitator, mine}`.
+  `mine:false` = מפגש שאינו באחריותה (מנחה אחר) — מוצג מעומעם. `rubric` = `{"headers":[...],"rows":[[...]]}` או טקסט.
+- `POST ?action=course_delete` — `{"id":N}` או `{"match":"..."}`; הדרכות מקושרות נשארות עצמאיות.
+- `POST ?action=setting_set` — `{"key":"welcome_signature","value":"..."}` חתימת מייל ברוכים הבאים.
+- הרשימה המלאה עם המפגשים ב-`?action=all` תחת `courses`.
 
 ## מה בוצע (דוח שבועי)
 - `GET ?action=completed` — משימות שהושלמו, מקובצות לשבועות **שישי עד חמישי** (שעון ישראל).

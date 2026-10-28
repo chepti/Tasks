@@ -52,6 +52,20 @@ https://chepti.com/tasks/api/api.php?action=help
   equipment, structure, message, slides_url, recording_url,
   fu_recording/fu_whatsapp/fu_takeaways (0/1 — צ'קליסט המשך), notes.
 - state מחזיר upcoming_trainings. הרשימה המלאה ב-?action=all.
+- הדרכה יכולה להיות חלק מהשתלמות: course_id, או "course":"חלק מהשם" (409 + candidates אם דו-משמעי).
+
+השתלמויות (courses) — סילבוס, מטלת סיכום, מחוון ונוסח "ברוכים הבאים":
+- action=courses: רשימה קצרה (id, name, number, sessions, my_sessions, first).
+- action=course_upsert: עדכון עם "id" או "match" (חלק מהשם), אחרת יצירה (name חובה).
+  שדות: name, number, summary, sessions, assignment, rubric, syllabus_url, meet_url,
+  classroom_url, group_url, welcome, notes, status.
+- sessions הוא מערך אמיתי (לא מחרוזת) של אובייקטים: n, date (YYYY-MM-DD), date_text (כשאין תאריך,
+  למשל "לתיאום"), from, to, hours (שעות אקדמיות), mode (online|physical|async|hybrid), mode_text,
+  topic, content, product (מה מגישים), facilitator, mine.
+  mine=false = מפגש שהמנחה אחר ולא באחריותה של המשתמשת — חשוב לסמן נכון, זה מה שהיא רואה מעומעם.
+- rubric: {"headers":["קריטריון","משקל","בסיסי","בינוני","מיטבי"],"rows":[[...]]} או טקסט חופשי.
+- welcome ריק = האפליקציה בונה את מייל ברוכים הבאים מהשדות (מספר, קישורים, מפגש ראשון, חתימה).
+- course_delete (id או match), setting_set עם key=welcome_signature לחתימה הקבועה.
 
 דיווח על מה שבוצע:
 - action=completed מחזיר משימות שהושלמו, מקובצות לשבועות שישי..חמישי (שעון ישראל).

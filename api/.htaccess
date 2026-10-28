@@ -1,5 +1,9 @@
-# Never serve the database or config over HTTP
-<FilesMatch "\.(db|db-wal|db-shm|sqlite)$">
+# Never serve the database or config over HTTP.
+# No "$" anchor on purpose: a backup like tasks.db.bak-2026 or tasks.db~ must stay blocked too.
+<FilesMatch "\.(db|sqlite)">
+    Require all denied
+</FilesMatch>
+<FilesMatch "\.(bak|old|orig|save|sql|swp)$|~$">
     Require all denied
 </FilesMatch>
 <Files "config.php">

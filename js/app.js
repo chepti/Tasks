@@ -37,6 +37,9 @@ function ic(name, size = 20) {
     partyPopper: '<path d="M5.8 11.3 2 22l10.7-3.79"/><path d="M4 3h.01"/><path d="M22 8h.01"/><path d="M15 2h.01"/><path d="M22 20h.01"/><path d="m22 2-2.24.75a2.9 2.9 0 0 0-1.96 3.12c.1.86-.57 1.63-1.45 1.63h-.38c-.86 0-1.6.6-1.76 1.44L14 10"/><path d="m22 13-.82-.33c-.86-.34-1.82.2-1.98 1.11c-.11.7-.72 1.22-1.43 1.22H17"/><path d="m11 2 .33.82c.34.86-.2 1.82-1.11 1.98C9.52 4.9 9 5.52 9 6.23V7"/><path d="M11 13c1.93 1.93 2.83 4.17 2 5-.83.83-3.07-.07-5-2-1.93-1.93-2.83-4.17-2-5 .83-.83 3.07.07 5 2Z"/>',
     rotateCcw: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>',
     listTodo: '<rect x="3" y="5" width="6" height="6" rx="1"/><path d="m3 17 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/>',
+    graduationCap: '<path d="M21.42 10.922a1 1 0 0 0-.019-1.838L12.83 5.18a2 2 0 0 0-1.66 0L2.6 9.08a1 1 0 0 0 0 1.832l8.57 3.908a2 2 0 0 0 1.66 0z"/><path d="M22 10v6"/><path d="M6 12.5V16a6 3 0 0 0 12 0v-3.5"/>',
+    fileText: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/>',
+    users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
     archive: '<rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/>',
     hourglass: '<path d="M5 22h14"/><path d="M5 2h14"/><path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22"/><path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/>',
     cloudSun: '<path d="M12 2v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="M20 12h2"/><path d="m19.07 4.93-1.41 1.41"/><path d="M15.947 12.65a4 4 0 0 0-5.925-4.128"/><path d="M13 22H7a5 5 0 1 1 4.9-6H13a3 3 0 0 1 0 6Z"/>',
@@ -156,6 +159,8 @@ function normalizeData(d) {
   d.trainings = d.trainings || [];
   d.apps = d.apps || [];
   d.app_items = d.app_items || [];
+  d.courses = d.courses || [];
+  d.settings = d.settings || {};
   return d;
 }
 
@@ -1000,12 +1005,14 @@ function gcalUrl(t) {
 
 function trainingCard(t, { finished = false } = {}) {
   const contact = [t.contact_name, t.contact_role].filter(Boolean).join(' · ');
+  const course = courseOf(t);
   return `
   <div class="card training-card" data-tedit="${t.id}">
     <div class="training-head">
       <div style="flex:1;min-width:0">
         <div class="training-topic">${esc(t.topic || t.place || 'הדרכה חדשה')}</div>
         <div class="training-meta">
+          ${course ? `<span class="tag t-lilac">${ic('graduationCap', 11)}${esc(course.name)}</span>` : ''}
           ${t.mode && TMODE[t.mode] ? `<span class="tag t-${TMODE[t.mode].color}">${ic(TMODE[t.mode].icon, 11)}${TMODE[t.mode].label}</span>` : ''}
           ${t.place ? `<span class="tag t-sky">${ic('mapPin', 11)}${esc(t.place)}</span>` : ''}
           <span class="tag ${t.date ? 't-lilac' : 't-gray'}">${ic('calendar', 11)}${trainingDateLabel(t)}</span>
@@ -1015,6 +1022,7 @@ function trainingCard(t, { finished = false } = {}) {
         ${contact ? `<div class="training-contact">${ic('user', 13)} ${esc(contact)}</div>` : ''}
       </div>
     </div>
+    ${course ? `<div class="training-actions course-actions">${courseButtons(course, { date: t.date })}</div>` : ''}
     ${finished ? `
       <div class="training-actions">
         <button class="pill-toggle ${t.pay_received == 1 ? 'on' : ''}" data-pay="${t.id}">
@@ -1061,12 +1069,20 @@ function renderTrainings() {
       ${gcalUrl(next) ? `<a class="btn btn-ghost hero-btn" href="${gcalUrl(next)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${ic('calendar', 15)} הוספה ליומן גוגל</a>` : ''}
       <button class="btn btn-ghost hero-btn" data-copytraining="${next.id}" title="כל הפרטים כטקסט מסודר">${ic('copy', 15)} העתקת הכל</button>
     </div>
+    ${courseOf(next) ? `
+    <div class="training-hero-actions hero-course">
+      <span class="hero-course-name">${ic('graduationCap', 14)} ${esc(courseOf(next).name)}</span>
+      ${courseButtons(courseOf(next), { cls: 'btn btn-ghost hero-btn', date: next.date })}
+    </div>` : ''}
   </div>` : '';
 
   return `
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
     <div class="section-title" style="margin:0">${ic('presentation', 20)} הדרכות <span class="count">${upcoming.length}</span></div>
-    <button class="btn btn-ghost" id="btn-new-training">${ic('plus', 16)} הדרכה</button>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-ghost" id="btn-courses" title="סילבוסים, מטלות ומחוונים">${ic('graduationCap', 16)} השתלמויות${coursesList().length ? ` <span class="count">${coursesList().length}</span>` : ''}</button>
+      <button class="btn btn-ghost" id="btn-new-training">${ic('plus', 16)} הדרכה</button>
+    </div>
   </div>
   ${heroHtml}
   ${rest.length ? `
@@ -1144,6 +1160,8 @@ function trainingToText(t, fu) {
   const join = (arr, sep = ', ') => arr.filter(x => x && String(x).trim()).join(sep);
 
   add('הדרכה', t.topic);
+  const course = courseOf(t);
+  add('חלק מהשתלמות', course && course.name);
   add('מתי', fmtTrainingDate(t));
   add('איפה', join([t.place, TMODE[t.mode]?.label], ' — '));
   add('איש קשר', join([t.contact_name, t.contact_role, t.contact_phone, t.contact_email]));
@@ -1194,6 +1212,546 @@ function copySmart(text, what) {
   if (!text || !text.trim()) { toast('אין מה להעתיק עדיין'); return; }
   const n = text.split('\n').length;
   copyText(text, `${what} — ${n} שדות הועתקו`);
+}
+
+/* ============ השתלמויות ============ */
+/* השתלמות היא ישות משותפת: סילבוס, מטלה, מחוון ונוסח "ברוכים הבאים". הדרכות מצביעות
+   עליה (course_id), כך שאותה השתלמות משרתת כמה הדרכות. מפגש שאינו באחריותי (מנחה אחר)
+   נשמר עם mine:false ומוצג מעומעם — כדי שיהיה ברור במבט מה שלי ומה לא. */
+
+const SMODE = {
+  online:   { label: 'מקוון',        icon: 'monitor', color: 'lilac' },
+  async:    { label: 'א-סינכרוני',   icon: 'clock',   color: 'peach' },
+  physical: { label: 'פנים אל פנים', icon: 'mapPin',  color: 'sky' },
+  hybrid:   { label: 'היברידי',      icon: 'refresh', color: 'teal' },
+};
+const DEFAULT_SIGNATURE = 'בהצלחה רבה!\nחפציה בן ארצי,\nמנחת ההשתלמות';
+// טקסט שהוקלד בלשונית "ברוכים הבאים" ועוד לא נשמר — שורד מעבר בין לשוניות
+const COURSE_UI = { welcome: {} };
+
+function coursesList() { return DATA.courses || []; }
+function courseById(id) { return coursesList().find(c => c.id == id) || null; }
+function courseOf(t) { return t && t.course_id ? courseById(t.course_id) : null; }
+function courseSessions(c) {
+  try { const l = JSON.parse(c.sessions || '[]'); return Array.isArray(l) ? l : []; } catch (e) { return []; }
+}
+const sessionIsMine = s => s.mine !== false;
+function courseStats(c) {
+  const all = courseSessions(c), mine = all.filter(sessionIsMine);
+  return { total: all.length, mine: mine.length, hours: mine.reduce((a, s) => a + (+s.hours || 0), 0) };
+}
+function courseFirstDate(c) {
+  return courseSessions(c).map(s => s.date).filter(Boolean).sort()[0] || '';
+}
+function shortDate(iso) {
+  const d = new Date(iso + 'T12:00:00');
+  return `${d.getDate()}.${d.getMonth() + 1}.${String(d.getFullYear()).slice(2)}`;
+}
+function sessionWhen(s) {
+  if (!s.date) return s.date_text || 'מועד לא נקבע';
+  const d = new Date(s.date + 'T12:00:00');
+  let x = `יום ${DAY_NAMES[d.getDay()]} · ${shortDate(s.date)}`;
+  if (s.from) x += ` · ${s.from}${s.to ? '–' + s.to : ''}`;
+  return x;
+}
+
+/* מחוון: JSON {headers, rows} כשיש טבלה, אחרת טקסט חופשי */
+function courseRubric(c) {
+  if (!c.rubric) return null;
+  try { const r = JSON.parse(c.rubric); if (r && Array.isArray(r.rows)) return r; } catch (e) {}
+  return { text: c.rubric };
+}
+function rubricToText(r) {
+  if (!r) return '';
+  if (r.text) return r.text;
+  return [r.headers, ...r.rows].map(row => row.join(' | ')).join('\n');
+}
+function rubricFromText(txt) {
+  const lines = String(txt || '').split('\n').map(s => s.trim()).filter(Boolean);
+  if (lines.length >= 2 && lines.every(l => l.includes(' | '))) {
+    const rows = lines.map(l => l.split(' | ').map(s => s.trim()));
+    return JSON.stringify({ headers: rows[0], rows: rows.slice(1) });
+  }
+  return String(txt || '').trim();
+}
+
+/* טקסט מסודר של הסילבוס — להדבקה בשיחה עם הבינה */
+function courseToText(c) {
+  const L = [`השתלמות: ${c.name}${c.number ? ` (מס' ${c.number})` : ''}`];
+  if (c.summary) L.push(c.summary);
+  const st = courseStats(c);
+  if (st.mine !== st.total) L.push(`באחריותי ${st.mine} מתוך ${st.total} מפגשים`);
+  courseSessions(c).forEach(s => {
+    const md = SMODE[s.mode];
+    const head = [sessionWhen(s), md && md.label, s.hours ? s.hours + " שעות אק'" : ''].filter(Boolean).join(', ');
+    L.push('', `${s.n}. ${head} — ${s.topic}${sessionIsMine(s) ? '' : ` [לא באחריותי${s.facilitator ? ': ' + s.facilitator : ''}]`}`);
+    if (s.content) L.push(`   תוכן: ${s.content}`);
+    if (s.product) L.push(`   תוצר: ${s.product}`);
+  });
+  if (c.assignment) L.push('', 'מטלת הסיכום:', c.assignment);
+  const rt = rubricToText(courseRubric(c));
+  if (rt) L.push('', 'מחוון:', rt);
+  if (c.notes) L.push('', `הערה: ${c.notes}`);
+  return L.join('\n');
+}
+
+async function saveCourse(payload) {
+  try {
+    const { course } = await api('course_upsert', payload);
+    const i = DATA.courses.findIndex(x => x.id == course.id);
+    if (i >= 0) DATA.courses[i] = course; else DATA.courses.push(course);
+    saveCache();
+    return course;
+  } catch (e) {
+    toast(e.isNetwork ? 'אין רשת כרגע — עריכת השתלמויות נשמרת רק כשמחוברים' : 'אופס — ' + e.message);
+    return null;
+  }
+}
+
+/* ---- מייל ברוכים הבאים: נבנה מהשדות, וניתן לעריכה חופשית ---- */
+function welcomeSignature() { return (DATA.settings && DATA.settings.welcome_signature) || DEFAULT_SIGNATURE; }
+
+function welcomeMissing(c) {
+  const m = [];
+  if (!c.number) m.push("מס' השתלמות");
+  if (!courseFirstDate(c)) m.push('תאריך מפגש ראשון');
+  if (!c.meet_url) m.push('קישור למפגשים');
+  if (!c.classroom_url) m.push('קלאסרום');
+  if (!c.group_url) m.push('קבוצה בחומר פתוח');
+  if (!c.syllabus_url) m.push('קישור לסילבוס');
+  return m;
+}
+
+function buildWelcome(c) {
+  const first = courseSessions(c).filter(s => s.date).sort((a, b) => a.date.localeCompare(b.date))[0];
+  const when = first
+    ? `${shortDate(first.date)} יום ${DAY_NAMES[new Date(first.date + 'T12:00:00').getDay()]}${first.from ? ' בשעה ' + first.from : ''}`
+    : '';
+  const items = [];
+  if (c.meet_url) items.push(`קישור למפגשים: ${c.meet_url}`);
+  if (c.classroom_url) items.push(`מרחב מלווה למידה – קלאסרום – בו יהיו ההקלטות, ההודעות והמצגות. לחצו כדי להצטרף, שימו לב שאתן מחוברות למייל שלכן ולא על שם מישהו אחר: ${c.classroom_url}`);
+  items.push('התחברו לאתר השיתוף "חומר פתוח" https://openstuff.co.il/ בעזרת חשבון גוגל שלכם. כאן תגישו את התוצרים ותגיבו לעמיתות.'
+    + (c.group_url ? ` הצטרפו לקבוצה שלנו בפנים כדי שתדעו להגיב אחת לשניה: ${c.group_url}` : ''));
+  if (c.syllabus_url) items.push(`הסילבוס של הקורס, שכולל גם את פירוט המטלה: ${c.syllabus_url}`);
+  const L = [];
+  if (c.number) L.push(`(מס' השתלמות ${c.number})`, '');
+  L.push(`כמה דברים חשובים לקראת תחילת ההשתלמות${when ? ' בתאריך: ' + when : ''}`, '');
+  items.forEach((x, i) => L.push(`${i + 1}. ${x}`));
+  L.push('', welcomeSignature());
+  return L.join('\n');
+}
+
+/* העתקה עשירה: ב-Gmail הקישורים נשארים לחיצים. נופל לטקסט פשוט אם הדפדפן לא תומך. */
+function copyRich(text, msg) {
+  const html = '<div dir="rtl">' + esc(text).replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1">$1</a>').replace(/\n/g, '<br>') + '</div>';
+  if (navigator.clipboard && window.ClipboardItem) {
+    navigator.clipboard.write([new ClipboardItem({
+      'text/plain': new Blob([text], { type: 'text/plain' }),
+      'text/html': new Blob([html], { type: 'text/html' }),
+    })]).then(() => toast(msg)).catch(() => copyText(text, msg));
+  } else copyText(text, msg);
+}
+
+/* ---- חלון ההשתלמות: שלוש לשוניות (סילבוס / מטלה ומחוון / ברוכים הבאים) ---- */
+function openCourse(id, tab = 'syl', opts = {}) {
+  const c = courseById(id);
+  if (!c) { toast('ההשתלמות לא נמצאה'); return; }
+  const TABS = [['syl', 'graduationCap', 'סילבוס'], ['asg', 'fileText', 'מטלה ומחוון'], ['wel', 'mail', 'מייל ברוכים הבאים']];
+  const body = tab === 'asg' ? courseAssignmentHtml(c) : tab === 'wel' ? courseWelcomeHtml(c) : courseSyllabusHtml(c, opts);
+  openModal(`
+    <div class="course-head">
+      <div class="course-head-main">
+        <div class="course-title">${esc(c.name)}</div>
+        ${c.number ? `<span class="tag t-gray">מס׳ השתלמות ${esc(c.number)}</span>` : ''}
+      </div>
+      <button class="corner-btn" id="cm-edit" title="עריכת ההשתלמות">${ic('pencil', 16)}</button>
+      <button class="corner-btn" id="cm-close" title="סגירה">${ic('x', 18)}</button>
+    </div>
+    <div class="course-tabs">
+      ${TABS.map(([k, i, l]) => `<button type="button" class="pill-toggle ${k === tab ? 'on' : ''}" data-cm-tab="${k}">${ic(i, 14)} ${l}</button>`).join('')}
+    </div>
+    <div class="course-body">${body}</div>`);
+  $('#modal').classList.add('modal-wide');
+  $('#cm-close').onclick = closeModal;
+  $('#cm-edit').onclick = () => openCourseEditor(id);
+  $('#modal-backdrop').onclick = e => { if (e.target === $('#modal-backdrop')) closeModal(); };
+  $$('#modal [data-cm-tab]').forEach(b => b.onclick = () => openCourse(id, b.dataset.cmTab, opts));
+  if (tab === 'asg') bindCourseAssignment(c);
+  else if (tab === 'wel') bindCourseWelcome(c);
+  else bindCourseSyllabus(c);
+}
+
+function sessionCard(s, focusDate) {
+  const mine = sessionIsMine(s), md = SMODE[s.mode];
+  const past = s.date && s.date < todayStr();
+  const focus = focusDate && s.date === focusDate;
+  const place = s.mode_text && (!md || s.mode_text !== md.label) ? s.mode_text : '';
+  return `
+  <div class="sess ${mine ? '' : 'not-mine'} ${past ? 'past' : ''} ${focus ? 'focus' : ''}">
+    <div class="sess-n">${esc(s.n)}</div>
+    <div class="sess-main">
+      <div class="sess-top">
+        <span class="sess-when">${esc(sessionWhen(s))}</span>
+        ${md ? `<span class="tag t-${md.color}">${ic(md.icon, 11)}${md.label}</span>` : ''}
+        ${s.hours ? `<span class="tag t-gray">${esc(s.hours)} שעות אק׳</span>` : ''}
+        ${focus ? `<span class="tag t-coral">${ic('star', 11)}ההדרכה הזו</span>` : ''}
+        ${mine ? '' : `<span class="tag t-rose">${ic('users', 11)}לא באחריותי${s.facilitator ? ' · ' + esc(s.facilitator) : ''}</span>`}
+      </div>
+      <div class="sess-topic">${esc(s.topic)}</div>
+      ${place ? `<div class="sess-place">${esc(place)}</div>` : ''}
+      ${s.content || s.product ? `
+        <details class="sess-more"><summary>פירוט ותוצר</summary>
+          ${s.content ? `<p>${esc(s.content)}</p>` : ''}
+          ${s.product ? `<p class="sess-product"><b>תוצר:</b> ${esc(s.product)}</p>` : ''}
+        </details>` : ''}
+    </div>
+  </div>`;
+}
+
+function courseSyllabusHtml(c, opts) {
+  const st = courseStats(c), list = courseSessions(c);
+  const allMine = st.total > 0 && st.mine === st.total;
+  return `
+    ${c.summary ? `<p class="course-summary">${esc(c.summary)}</p>` : ''}
+    <div class="resp-banner ${allMine ? 'ok' : 'partial'}">
+      ${ic(allMine ? 'check' : 'users', 16)}
+      <span>${!st.total ? 'עוד לא הוזנו מפגשים'
+        : allMine ? `כל ${st.total} המפגשים באחריותי`
+        : `באחריותי <b>${st.mine}</b> מתוך ${st.total} מפגשים`}${st.hours ? ` · ${st.hours} שעות אקדמיות` : ''}</span>
+      <button type="button" class="btn btn-ghost resp-copy" id="cm-copy" title="כל הסילבוס כטקסט, להדבקה בשיחה עם הבינה">${ic('copy', 14)} העתקה</button>
+    </div>
+    <div class="sess-list">${list.map(s => sessionCard(s, opts.focusDate)).join('') || `<div class="fu-empty">אין מפגשים — אפשר להוסיף בעריכה</div>`}</div>
+    <label class="cell full course-note">
+      <span class="cell-label">${ic('pencil', 12)} הערה קטנה</span>
+      <textarea id="cm-notes" rows="2" placeholder="מה חשוב לזכור על ההשתלמות הזו?">${esc(c.notes || '')}</textarea>
+    </label>`;
+}
+function bindCourseSyllabus(c) {
+  const ta = $('#cm-notes');
+  ta.onblur = async () => {
+    const fresh = courseById(c.id);
+    if (ta.value.trim() === ((fresh && fresh.notes) || '').trim()) return;
+    if (await saveCourse({ id: c.id, notes: ta.value.trim() })) toast('ההערה נשמרה');
+  };
+  $('#cm-copy').onclick = () => copyText(courseToText(c), 'הסילבוס הועתק');
+  const f = $('#modal .sess.focus');
+  if (f) f.scrollIntoView({ block: 'center' });
+}
+
+function rubricHtml(r) {
+  if (!r) return `<div class="fu-empty">עוד לא הוזן מחוון — אפשר להוסיף בעריכה</div>`;
+  if (r.text) return `<div class="doc-text">${esc(r.text)}</div>`;
+  return `<div class="rubric-wrap"><table class="rubric">
+    <thead><tr>${r.headers.map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead>
+    <tbody>${r.rows.map(row => `<tr>${row.map((cell, i) =>
+      `<td class="${i === 0 ? 'rb-crit' : /^\d+%$/.test(cell) ? 'rb-w' : ''}">${esc(cell)}</td>`).join('')}</tr>`).join('')}</tbody>
+  </table></div>`;
+}
+function courseAssignmentHtml(c) {
+  return `
+    <div class="doc-block">
+      <div class="doc-title">${ic('fileText', 16)} מטלת הסיכום והדרישות
+        ${c.assignment ? `<button type="button" class="icon-btn" data-cm-copy="asg" title="העתקת המטלה">${ic('copy', 15)}</button>` : ''}</div>
+      ${c.assignment ? `<div class="doc-text">${esc(c.assignment)}</div>` : `<div class="fu-empty">עוד לא הוזנה מטלה — אפשר להוסיף בעריכה</div>`}
+    </div>
+    <div class="doc-block">
+      <div class="doc-title">${ic('listTodo', 16)} מחוון
+        ${c.rubric ? `<button type="button" class="icon-btn" data-cm-copy="rub" title="העתקת המחוון">${ic('copy', 15)}</button>` : ''}</div>
+      ${rubricHtml(courseRubric(c))}
+    </div>`;
+}
+function bindCourseAssignment(c) {
+  $$('#modal [data-cm-copy]').forEach(b => b.onclick = () =>
+    copyText(b.dataset.cmCopy === 'asg' ? c.assignment : rubricToText(courseRubric(c)),
+             b.dataset.cmCopy === 'asg' ? 'המטלה הועתקה' : 'המחוון הועתק'));
+}
+
+const WELCOME_FIELDS = [
+  ['number', "מס' השתלמות", ''], ['meet_url', 'קישור למפגשים', 'ltr'], ['classroom_url', 'קלאסרום', 'ltr'],
+  ['group_url', 'קבוצה בחומר פתוח', 'ltr'], ['syllabus_url', 'קישור לסילבוס', 'ltr'],
+];
+function courseWelcomeHtml(c) {
+  const saved = COURSE_UI.welcome[c.id];
+  const text = saved != null ? saved : (c.welcome || buildWelcome(c));
+  return `
+    <p class="course-summary">הנוסח נבנה מהשדות שלמטה ואפשר לערוך אותו חופשית. הקישורים נשארים לחיצים בהדבקה ב-Gmail.</p>
+    <div class="welcome-fields">
+      ${WELCOME_FIELDS.map(([k, label, dir]) => `
+        <label class="cell"><span class="cell-label">${ic(k === 'number' ? 'star' : 'monitor', 12)} ${label}</span>
+          <input type="text" data-wf="${k}" value="${esc(c[k] || '')}" ${dir ? 'dir="ltr"' : ''}></label>`).join('')}
+    </div>
+    <div class="welcome-missing" id="cw-missing"></div>
+    <textarea id="cw-text" class="welcome-text" rows="12">${esc(text)}</textarea>
+    <div class="welcome-actions">
+      <button type="button" class="btn btn-primary" id="cw-copy">${ic('copy', 15)} העתקת המייל</button>
+      <button type="button" class="btn btn-ghost" id="cw-rebuild" title="לבנות את הנוסח מחדש מהשדות (מוחק עריכה ידנית)">${ic('refresh', 15)} בנייה מחדש</button>
+      <button type="button" class="btn btn-ghost" id="cw-save">${ic('check', 15)} שמירה</button>
+    </div>
+    <details class="welcome-sig">
+      <summary>חתימה קבועה (לכל המיילים)</summary>
+      <textarea id="cw-sig" rows="4">${esc(welcomeSignature())}</textarea>
+      <button type="button" class="btn btn-ghost" id="cw-sig-save">שמירת החתימה</button>
+    </details>`;
+}
+function bindCourseWelcome(c) {
+  const work = {}; WELCOME_FIELDS.forEach(([k]) => { work[k] = c[k] || ''; });
+  const ta = $('#cw-text');
+  let manual = !!c.welcome || COURSE_UI.welcome[c.id] != null;
+  const grow = () => { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight + 2, 560) + 'px'; };
+  const cur = () => ({ ...c, ...work });
+  const showMissing = () => {
+    const m = welcomeMissing(cur());
+    $('#cw-missing').innerHTML = m.length
+      ? `<span class="tag t-peach">${ic('hourglass', 11)}חסר בנוסח</span> ${m.map(x => `<span class="tag t-gray">${esc(x)}</span>`).join(' ')}`
+      : `<span class="tag t-teal">${ic('check', 11)}כל הפרטים מולאו</span>`;
+  };
+  const rebuild = () => { ta.value = buildWelcome(cur()); manual = false; delete COURSE_UI.welcome[c.id]; grow(); };
+  showMissing(); grow();
+  $$('#modal [data-wf]').forEach(inp => inp.oninput = () => {
+    work[inp.dataset.wf] = inp.value.trim();
+    showMissing();
+    if (!manual) { ta.value = buildWelcome(cur()); grow(); }   // עריכה ידנית לא נדרסת
+  });
+  ta.oninput = () => { manual = true; COURSE_UI.welcome[c.id] = ta.value; grow(); };
+  $('#cw-rebuild').onclick = () => { rebuild(); toast('הנוסח נבנה מחדש מהשדות'); };
+  $('#cw-copy').onclick = () => {
+    const m = welcomeMissing(cur());
+    copyRich(ta.value, m.length ? `הועתק — שימי לב, חסר: ${m.join(', ')}` : 'המייל הועתק');
+  };
+  $('#cw-save').onclick = async () => {
+    const payload = { id: c.id, welcome: manual ? ta.value : '' };
+    WELCOME_FIELDS.forEach(([k]) => { if (work[k] !== (c[k] || '')) payload[k] = work[k]; });
+    if (await saveCourse(payload)) { delete COURSE_UI.welcome[c.id]; toast('נשמר'); openCourse(c.id, 'wel'); }
+  };
+  $('#cw-sig-save').onclick = async () => {
+    try {
+      const r = await api('setting_set', { key: 'welcome_signature', value: $('#cw-sig').value.trim() });
+      DATA.settings.welcome_signature = r.value; saveCache();
+      if (!manual) rebuild();
+      toast('החתימה נשמרה');
+    } catch (e) { toast(e.isNetwork ? 'אין רשת כרגע' : 'אופס — ' + e.message); }
+  };
+}
+
+/* ---- רשימת ההשתלמויות ---- */
+function openCoursesList() {
+  const list = coursesList().slice().sort((a, b) => (courseFirstDate(a) || '9999').localeCompare(courseFirstDate(b) || '9999'));
+  const linked = c => trainingsList().filter(t => t.course_id == c.id).length;
+  openModal(`
+    <h3>${ic('graduationCap', 20)} ההשתלמויות שלי <span class="count">${list.length}</span></h3>
+    <div class="course-list">
+      ${list.map(c => {
+        const st = courseStats(c), fd = courseFirstDate(c), n = linked(c);
+        return `
+        <button type="button" class="course-row" data-open-course="${c.id}">
+          <span class="course-row-title">${esc(c.name)}</span>
+          <span class="course-row-meta">
+            <span class="tag t-lilac">${ic('calendar', 11)}${fd ? 'מתחילה ' + shortDate(fd) : 'בלי תאריך'}</span>
+            <span class="tag ${st.mine === st.total ? 't-teal' : 't-rose'}">${ic('users', 11)}${st.mine === st.total ? `${st.total} מפגשים` : `שלי ${st.mine} מתוך ${st.total}`}</span>
+            ${n ? `<span class="tag t-sky">${ic('presentation', 11)}${n} הדרכות מקושרות</span>` : ''}
+          </span>
+        </button>`;
+      }).join('') || '<div class="fu-empty">עוד אין השתלמויות</div>'}
+    </div>
+    <div class="sheet-actions">
+      <button class="btn btn-ghost" id="cl-close">סגירה</button>
+      <button class="btn btn-primary" id="cl-new">${ic('plus', 16)} השתלמות חדשה</button>
+    </div>`);
+  $('#modal').classList.add('modal-wide');
+  $('#cl-close').onclick = closeModal;
+  $('#cl-new').onclick = () => openCourseEditor(null);
+  $('#modal-backdrop').onclick = e => { if (e.target === $('#modal-backdrop')) closeModal(); };
+  $$('#modal [data-open-course]').forEach(b => b.onclick = () => openCourse(+b.dataset.openCourse));
+}
+
+/* ---- עורך השתלמות (מודאל, עם טיוטה מקומית משלו) ---- */
+let COURSE_EDIT = null;
+function courseEditorDirty() {
+  if (!COURSE_EDIT) return false;
+  try { return JSON.stringify(COURSE_EDIT.collect()) !== COURSE_EDIT.base; } catch (e) { return false; }
+}
+function openCourseEditor(id) {
+  const base = id != null ? courseById(id) : null;
+  const c = base ? { ...base } : { client_id: 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), name: '' };
+  let sess = base ? courseSessions(base).map(s => ({ ...s })) : [];
+  const v = f => esc(c[f] || '');
+  const cell = (f, label, icon, cls = '', ltr = false) => `
+    <label class="cell ${cls}"><span class="cell-label">${ic(icon, 12)} ${label}</span>
+      <input type="text" id="ce-${f}" value="${v(f)}" ${ltr ? 'dir="ltr"' : ''}></label>`;
+  const area = (f, label, icon, ph = '', rows = 3, val = null) => `
+    <label class="cell full"><span class="cell-label">${ic(icon, 12)} ${label}</span>
+      <textarea id="ce-${f}" rows="${rows}" placeholder="${esc(ph)}">${val != null ? esc(val) : v(f)}</textarea></label>`;
+  const divider = (icon, label) => `<div class="sheet-divider"><span>${ic(icon, 14)} ${label}</span></div>`;
+
+  openModal(`
+    <h3>${ic('graduationCap', 20)} ${base ? 'עריכת השתלמות' : 'השתלמות חדשה'}</h3>
+    <div id="ce-draft-slot"></div>
+    <div class="ce-form">
+      <div class="tgrid c2">
+        ${cell('name', 'שם ההשתלמות', 'graduationCap', 'ce-wide')}
+        ${cell('number', "מס' השתלמות", 'star')}
+      </div>
+      ${area('summary', 'תיאור כללי', 'listTodo', 'קהל, ימים, היקף, הערות על המפגשים', 2)}
+      ${divider('monitor', 'קישורים (לנוסח ברוכים הבאים)')}
+      <div class="tgrid c2">
+        ${cell('syllabus_url', 'סילבוס', 'fileText', '', true)}
+        ${cell('meet_url', 'קישור למפגשים', 'monitor', '', true)}
+        ${cell('classroom_url', 'קלאסרום', 'graduationCap', '', true)}
+        ${cell('group_url', 'קבוצה בחומר פתוח', 'users', '', true)}
+      </div>
+      ${divider('calendar', 'מפגשים')}
+      <div id="ce-sess" class="ce-sess"></div>
+      <button type="button" class="btn btn-ghost" id="ce-addsess">${ic('plus', 15)} מפגש</button>
+      ${divider('fileText', 'מטלה ומחוון')}
+      ${area('assignment', 'מטלת הסיכום והדרישות', 'fileText', '', 5)}
+      ${area('rubric', 'מחוון', 'listTodo', 'שורה לכל קריטריון, העמודות מופרדות ב-" | " — השורה הראשונה היא הכותרות', 6, rubricToText(courseRubric(c)))}
+      ${area('notes', 'הערה קטנה', 'pencil', '', 2)}
+    </div>
+    <div class="sheet-actions">
+      ${base ? `<button class="btn btn-danger" id="ce-delete" title="מחיקת ההשתלמות">${ic('trash', 17)}</button>` : ''}
+      <button class="btn btn-ghost" id="ce-cancel">ביטול</button>
+      <button class="btn btn-primary" id="ce-save">${base ? 'שמירה' : 'הוספה'}</button>
+    </div>`);
+  $('#modal').classList.add('modal-wide');
+
+  const modeOpts = m => '<option value="">אופן…</option>' +
+    Object.entries(SMODE).map(([k, x]) => `<option value="${k}" ${m === k ? 'selected' : ''}>${x.label}</option>`).join('');
+  const sessRow = (s, i) => `
+    <div class="se-row ${sessionIsMine(s) ? '' : 'not-mine'}" data-si="${i}">
+      <div class="se-line">
+        <span class="sess-n">${i + 1}</span>
+        <input type="date" data-f="date" value="${esc(s.date || '')}">
+        <input type="time" data-f="from" value="${esc(s.from || '')}">
+        <input type="time" data-f="to" value="${esc(s.to || '')}">
+        <select data-f="mode">${modeOpts(s.mode || '')}</select>
+        <input type="text" data-f="hours" class="se-hours" inputmode="decimal" placeholder="שעות אק׳" value="${esc(s.hours || '')}">
+        <button type="button" class="icon-btn" data-sdel title="הסרת המפגש">${ic('x', 15)}</button>
+      </div>
+      <input type="text" data-f="topic" placeholder="נושא המפגש" value="${esc(s.topic || '')}">
+      <div class="se-line">
+        <input type="text" data-f="facilitator" placeholder="מנחה" value="${esc(s.facilitator || '')}">
+        <input type="text" data-f="date_text" placeholder='מועד חופשי, למשל "לתיאום"' value="${esc(s.date_text || '')}">
+        <button type="button" class="pill-toggle small ${sessionIsMine(s) ? 'on' : ''}" data-smine title="האם המפגש באחריותי">${ic(sessionIsMine(s) ? 'check' : 'users', 13)} ${sessionIsMine(s) ? 'באחריותי' : 'לא באחריותי'}</button>
+      </div>
+      <details class="se-more"><summary>תוכן ותוצר</summary>
+        <textarea data-f="content" rows="2" placeholder="תוכן המפגש">${esc(s.content || '')}</textarea>
+        <textarea data-f="product" rows="2" placeholder="תוצר להגשה">${esc(s.product || '')}</textarea>
+      </details>
+    </div>`;
+  const renderSess = () => {
+    sess.forEach((s, i) => { s.n = i + 1; });
+    $('#ce-sess').innerHTML = sess.map(sessRow).join('') || '<div class="fu-empty">אין מפגשים עדיין</div>';
+  };
+  renderSess();
+
+  const onField = e => {
+    const el = e.target, row = el.closest('[data-si]');
+    if (!row || !el.dataset.f) return;
+    let val = el.value;
+    if (el.dataset.f === 'hours') val = val.trim() === '' ? null : (parseFloat(val) || null);
+    sess[+row.dataset.si][el.dataset.f] = val;
+  };
+  const box = $('#ce-sess');
+  box.oninput = onField; box.onchange = onField;
+  box.onclick = e => {
+    const row = e.target.closest('[data-si]'); if (!row) return;
+    const i = +row.dataset.si;
+    if (e.target.closest('[data-sdel]')) { sess.splice(i, 1); renderSess(); touchCourse(); }
+    else if (e.target.closest('[data-smine]')) { sess[i].mine = !sessionIsMine(sess[i]); renderSess(); touchCourse(); }
+  };
+  $('#ce-addsess').onclick = () => {
+    sess.push({ n: sess.length + 1, date: '', date_text: '', from: '', to: '', hours: null, mode: '', mode_text: '', topic: '', content: '', product: '', facilitator: '', mine: true });
+    renderSess(); touchCourse();
+    const last = $('#ce-sess [data-si]:last-child [data-f="topic"]'); if (last) last.focus();
+  };
+
+  const TXT = ['name', 'number', 'summary', 'syllabus_url', 'meet_url', 'classroom_url', 'group_url', 'assignment', 'rubric', 'notes'];
+  const collect = () => {
+    const o = {};
+    TXT.forEach(f => { const el = $('#ce-' + f); if (el) o[f] = el.value.trim(); });
+    o.sessions = sess.map(s => ({ ...s }));
+    return o;
+  };
+  const apply = d => {
+    TXT.forEach(f => { const el = $('#ce-' + f); if (el && d[f] !== undefined) el.value = d[f]; });
+    if (Array.isArray(d.sessions)) { sess = d.sessions.map(s => ({ ...s })); renderSess(); }
+  };
+
+  const draftId = id != null ? id : 'new';
+  COURSE_EDIT = { collect, base: null, timer: null };
+  COURSE_EDIT.base = JSON.stringify(collect());
+  function touchCourse() {
+    clearTimeout(COURSE_EDIT && COURSE_EDIT.timer);
+    if (!COURSE_EDIT) return;
+    COURSE_EDIT.timer = setTimeout(() => {
+      if (courseEditorDirty()) saveFormDraft('course', draftId, COURSE_EDIT.collect());
+    }, 400);
+  }
+  $('#modal').oninput = touchCourse; $('#modal').onchange = touchCourse;
+
+  const existing = loadFormDraft('course', draftId);
+  if (existing && JSON.stringify(existing.data) !== COURSE_EDIT.base) {
+    apply(existing.data);
+    $('#ce-draft-slot').innerHTML = draftBanner(existing.at);
+    $('#draft-drop').onclick = () => {
+      clearFormDraft('course', draftId);
+      COURSE_EDIT = null;
+      openCourseEditor(id);
+      toast('הטיוטה נמחקה — חזרנו למה שנשמר');
+    };
+  }
+
+  const finish = () => { COURSE_EDIT = null; $('#modal').oninput = null; $('#modal').onchange = null; };
+  const cancel = () => {
+    if (courseEditorDirty()) { saveFormDraft('course', draftId, COURSE_EDIT.collect()); toast('נשמרה טיוטה מקומית — התוכן יחזור בפתיחה הבאה'); }
+    finish();
+    if (base) openCourse(base.id); else closeModal();
+  };
+  $('#ce-cancel').onclick = cancel;
+  // לחיצה על הרקע לא סוגרת טופס עם שינויים — זה מה שאיבד תוכן בעבר
+  $('#modal-backdrop').onclick = e => {
+    if (e.target !== $('#modal-backdrop')) return;
+    if (courseEditorDirty()) { toast('יש שינויים שלא נשמרו — שמירה, או ביטול כדי לצאת'); return; }
+    finish(); closeModal();
+  };
+  $('#ce-save').onclick = async () => {
+    const d = collect();
+    if (!d.name) { $('#ce-name').focus(); toast('צריך שם להשתלמות'); return; }
+    const payload = { ...d, rubric: rubricFromText(d.rubric) };
+    if (base) payload.id = base.id; else payload.client_id = c.client_id;
+    const saved = await saveCourse(payload);
+    if (!saved) return;                       // נשארים בטופס, שום דבר לא אבד
+    clearFormDraft('course', draftId);
+    finish(); render();
+    toast('נשמר');
+    openCourse(saved.id);
+  };
+  const del = $('#ce-delete');
+  if (del) {
+    let armed = null;
+    del.onclick = async () => {
+      if (!armed) {
+        del.classList.add('armed'); del.innerHTML = `${ic('trash', 16)} בטוחה? לחצי שוב`;
+        armed = setTimeout(() => { armed = null; del.classList.remove('armed'); del.innerHTML = ic('trash', 17); }, 3500);
+        return;
+      }
+      clearTimeout(armed);
+      try {
+        await api('course_delete', { id: base.id });
+        DATA.courses = DATA.courses.filter(x => x.id != base.id);
+        DATA.trainings.forEach(t => { if (t.course_id == base.id) t.course_id = null; });
+        saveCache(); clearFormDraft('course', draftId); finish(); closeModal(); render();
+        toast('ההשתלמות נמחקה (ההדרכות המקושרות נשארו)');
+      } catch (e) { toast(e.isNetwork ? 'אין רשת כרגע' : 'אופס — ' + e.message); }
+    };
+  }
+  $('#ce-name').focus();
+}
+
+/* שלושת כפתורי ההשתלמות — מופיעים בכרטיס ובגיליון ההדרכה כשיש שיוך */
+function courseButtons(c, { cls = 'pill-toggle small', date = '' } = {}) {
+  return [['syl', 'graduationCap', 'סילבוס'], ['asg', 'fileText', 'מטלה ומחוון'], ['wel', 'mail', 'ברוכים הבאים']]
+    .map(([k, i, l]) => `<button type="button" class="${cls}" data-course-open="${k}" data-course="${c.id}" data-cdate="${esc(date)}" title="${esc(c.name)}">${ic(i, 13)} ${l}</button>`).join('');
 }
 
 /* ---------- גיליון עריכת הדרכה ---------- */
@@ -1270,6 +1828,16 @@ function openTrainingSheet(id) {
         </div>
 
         <div class="t-side">
+          ${coursesList().length || t.course_id ? `
+          ${divider('graduationCap', 'השתלמות')}
+          <div class="course-pick">
+            <select id="ts-course">
+              <option value="">— הדרכה עצמאית —</option>
+              ${coursesList().map(c => `<option value="${c.id}" ${t.course_id == c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
+            </select>
+            <div class="course-pick-btns" id="ts-course-btns"></div>
+          </div>` : ''}
+
           ${divider('smile', 'הקהל')}
           <div class="tgrid c2">
             ${cell('people_count', 'כמה אנשים', 'user')}
@@ -1398,6 +1966,20 @@ function openTrainingSheet(id) {
   $('#ts-fu-add').onclick = addFu;
   $('#ts-fu-new').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); addFu(); } };
 
+  // שיוך להשתלמות: הכפתורים תמיד מתייחסים למה שנבחר כרגע, גם לפני שמירה.
+  // חייב להיות מוגדר לפני הטיוטה — היא קוראת ל-collectTraining מיד.
+  const courseSel = $('#ts-course');
+  const renderCourseBtns = () => {
+    const box = $('#ts-course-btns'); if (!box || !courseSel) return;
+    const c = courseById(courseSel.value);
+    box.innerHTML = c ? courseButtons(c, { date: $('#ts-date').value }) : '';
+    $$('#ts-course-btns [data-course-open]').forEach(b => b.onclick = e => {
+      e.preventDefault();
+      openCourse(+b.dataset.course, b.dataset.courseOpen, { focusDate: $('#ts-date').value });
+    });
+  };
+  if (courseSel) { courseSel.onchange = () => { renderCourseBtns(); touchSheet(); }; renderCourseBtns(); }
+
   /* ---- טיוטה מקומית ---- */
   const TS_TEXT = ['topic','place','date','time_from','time_to','contact_name','contact_role','contact_phone',
     'contact_email','pay_amount','pay_process','people_count','style','audience','ideas','tools','message',
@@ -1408,6 +1990,8 @@ function openTrainingSheet(id) {
     o.mode = t.mode || '';
     o.pay_received = t.pay_received == 1 ? 1 : 0;
     o.followups = fuEncode(fu);
+    // בלי הרשימה (אין השתלמויות עדיין) לא נוגעים בשיוך הקיים
+    o.course_id = courseSel ? (courseSel.value ? +courseSel.value : null) : (t.course_id || null);
     return o;
   };
   const applyTraining = d => {
@@ -1424,6 +2008,7 @@ function openTrainingSheet(id) {
     if (d.followups !== undefined) {
       try { const l = JSON.parse(d.followups); if (Array.isArray(l)) { fu = l; renderFu(); } } catch (e) {}
     }
+    if (d.course_id !== undefined && courseSel) { courseSel.value = d.course_id || ''; renderCourseBtns(); }
     dayHint();
     $$('#task-sheet textarea').forEach(el => grow(el));
   };
@@ -2259,9 +2844,15 @@ function bindMain() {
   });
   // הדרכות
   $$('[data-tedit]').forEach(el => el.onclick = e => {
-    if (e.target.closest('[data-copy],[data-copytraining],[data-pay],[data-fu],a')) return;
+    if (e.target.closest('[data-copy],[data-copytraining],[data-course-open],[data-pay],[data-fu],a')) return;
     openTrainingSheet(el.dataset.tedit);
   });
+  $$('[data-course-open]').forEach(b => b.onclick = e => {
+    e.stopPropagation();
+    openCourse(+b.dataset.course, b.dataset.courseOpen, { focusDate: b.dataset.cdate || '' });
+  });
+  const bc = $('#btn-courses');
+  if (bc) bc.onclick = openCoursesList;
   $$('[data-copy]').forEach(b => b.onclick = e => {
     e.stopPropagation();
     copyText(b.dataset.copy);
@@ -3013,6 +3604,7 @@ const SEARCH_TYPES = {
   app:      { label: 'אפליקציה', icon: 'lightbulb',   color: 'peach' },
   item:     { label: 'רעיון',   icon: 'sparkles',     color: 'sky' },
   prompt:   { label: 'פרומפט',  icon: 'messageSquare', color: 'rose' },
+  course:   { label: 'השתלמות', icon: 'graduationCap', color: 'teal' },
 };
 
 function searchAll(q) {
@@ -3053,6 +3645,14 @@ function searchAll(q) {
          [t.audience, 3], [t.ideas, 3], [t.tools, 3], [t.message, 3], [t.structure, 3], [t.equipment, 3],
          [t.style, 3], [t.pay_process, 2], [t.pay_amount, 2], [t.notes, 3], [t.followups, 2]],
         t.date && t.date < todayStr() ? 'הסתיימה' : '');
+  });
+
+  (DATA.courses || []).forEach(c => {
+    const ss = courseSessions(c);
+    add('course', c.id, c.name, c.number ? `מס' ${c.number}` : '',
+        [[c.name, 10], [c.number, 6], [c.summary, 3], [ss.map(s => s.topic).join(' '), 5],
+         [ss.map(s => s.content).join(' '), 2], [ss.map(s => s.facilitator).join(' '), 2],
+         [c.assignment, 3], [rubricToText(courseRubric(c)), 2], [c.notes, 3]]);
   });
 
   (DATA.apps || []).forEach(a =>
@@ -3107,6 +3707,7 @@ function gotoResult(type, id) {
   closeModal();
   if (type === 'task') { openTaskSheet(id); return; }
   if (type === 'training') { VIEW = 'trainings'; render(); openTrainingSheet(id); return; }
+  if (type === 'course') { VIEW = 'trainings'; render(); openCourse(id); return; }
   if (type === 'project') {
     const p = DATA.projects.find(x => x.id == id);
     VIEW = (p && p.status === 'idea') ? 'ideas' : 'projects';
@@ -3158,11 +3759,14 @@ function openSearchModal() {
 /* ---------- מודאלים ---------- */
 function openModal(html) {
   $('#modal').innerHTML = html;
+  // נפתח מתוך גיליון (למשל סילבוס מתוך טופס הדרכה)? חייב להיות מעליו, לא מאחוריו
+  $('#modal-backdrop').classList.toggle('over-sheet', !$('#task-sheet').classList.contains('hidden'));
   $('#modal-backdrop').classList.remove('hidden');
 }
 function closeModal() {
   $('#modal-backdrop').classList.add('hidden');
-  $('#modal').classList.remove('modal-search');
+  $('#modal-backdrop').classList.remove('over-sheet');
+  $('#modal').classList.remove('modal-search', 'modal-wide');
 }
 
 function openPasteModal() {

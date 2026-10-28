@@ -41,7 +41,15 @@ const TRAINING_FIELDS = ['client_id','topic','place','mode','date','time_from','
     'contact_name','contact_phone','contact_email','contact_role',
     'pay_amount','pay_process','pay_received',
     'people_count','audience','style','ideas','tools','equipment','structure','message',
-    'slides_url','recording_url','fu_recording','fu_whatsapp','fu_takeaways','followups','notes'];
+    'slides_url','recording_url','fu_recording','fu_whatsapp','fu_takeaways','followups','notes','course_id'];
+
+// השתלמות (פתרון למידה) — ישות משותפת שהדרכות מצביעות עליה דרך course_id.
+// sessions ו-rubric נשמרים כ-JSON; ראו course_fields ב-help.
+const COURSE_FIELDS = ['client_id','name','number','summary','sessions','assignment','rubric',
+    'syllabus_url','meet_url','classroom_url','group_url','welcome','notes','status'];
+const COURSE_JSON_FIELDS = ['sessions','rubric'];
+// הגדרות כלליות שמותר לכתוב דרך setting_set (לא סודות — אלה נשארים ב-config.php)
+const SETTING_KEYS = ['welcome_signature'];
 
 const ENUMS = [
     'status'  => ['draft','inbox','next','waiting','someday','never','done','dropped'],
@@ -114,8 +122,19 @@ function helpDoc() {
             'style' => 'workshop / inspiration / lecture...', 'ideas' => 'session ideas', 'tools' => 'tools to teach',
             'equipment' => 'equipment teachers need', 'structure' => 'requested structure', 'message' => 'requested core message',
             'slides_url / recording_url' => 'links',
+            'course_id / course' => 'link this training to a course (השתלמות): pass course_id, or "course":"part of its name" (409 + candidates if ambiguous, "" detaches). One course can back many trainings.',
             'followups' => 'JSON array [{"label":"...","done":0|1}] — the per-training follow-up checklist. Items can be removed or added freely (a physical session has no recording to send). Legacy fu_recording/fu_whatsapp/fu_takeaways are only a fallback for rows written before this field.',
             'notes' => 'free text', 'client_id' => 'optional client-generated id for idempotent offline sync',
+        ],
+        'course_fields' => [
+            'name / number / summary / notes' => 'course name; official course number (מס\' השתלמות) once approved; a descriptive line (audience, days, scope); a small free note',
+            'sessions' => 'JSON array (send a real array). Each: {"n":1,"date":"YYYY-MM-DD","date_text":"לתיאום" (only when no real date),"from":"HH:MM","to":"HH:MM","hours":3 (academic hours),"mode":"online|physical|async|hybrid|","mode_text":"free text e.g. room/platform","topic":"","content":"","product":"what participants hand in","facilitator":"name","mine":true|false}. mine=false marks a session that is NOT the owner\'s responsibility (another facilitator) — the UI greys those out.',
+            'assignment' => 'the summary assignment (מטלת הסיכום) and its requirements, plain text',
+            'rubric' => 'JSON {"headers":["קריטריון","משקל","בסיסי","בינוני","מיטבי"],"rows":[[...],...]} — or plain text',
+            'syllabus_url / meet_url / classroom_url / group_url' => 'links used by the welcome email: syllabus doc, meeting link, Google Classroom, invite link to the group on openstuff.co.il',
+            'welcome' => 'saved text of the welcome email. Empty = the app builds it from the fields above plus the global welcome_signature setting.',
+            'status' => 'active | done | archived',
+            'client_id' => 'optional client-generated id for idempotent sync',
         ],
         'project_fields' => [
             'name / notes / color / status' => 'basics; status = active | idea | someday | never | done | archived. "idea" hides the project\'s tasks from Now/All (reach them only by opening the project, which lives on the Ideas tab). "never" = כבר לא יקרה.',
@@ -137,6 +156,10 @@ function helpDoc() {
             'project_delete' => 'POST — { id } (archives it).',
             'training_upsert'=> 'POST — create/update a training session. Update by {id}, or by {client_id} if it exists, else insert. See training_fields.',
             'training_delete'=> 'POST — { id } (snapshot kept for restore).',
+            'courses'        => 'GET  — compact list of courses (id, name, number, sessions, my_sessions, first date). Use course_upsert/course_delete to change them; "all" returns them in full with sessions.',
+            'course_upsert'  => 'POST — create/update a course. Update by {id}, {client_id}, or {match:"part of the name"} (409 + candidates if ambiguous); else insert (name required). See course_fields.',
+            'course_delete'  => 'POST — { id | match } (snapshot kept for restore; trainings linked to it become standalone).',
+            'setting_set'    => 'POST — { key:"welcome_signature", value:"..." } the signature block appended to every welcome email.',
             'orphans'        => 'GET  — open tasks that have no parent project, plus the project list to pick from.',
             'adopt'          => 'POST — attach existing tasks to a parent project in bulk: { project:"name" | project_id:N, tasks:[ 12, 15, "substring of a title" ] }. Ids and title substrings can be mixed; anything ambiguous comes back under "problems" instead of failing the whole call.',
             'app_upsert'     => 'POST — app-idea container: { id?, name, notes?, color?, status? }.',
@@ -337,9 +360,32 @@ foreach ([
     // per-training follow-up checklist as JSON [{label, done}] — replaces the three fixed
     // fu_* flags, which stay for historical rows and are used as a fallback when empty
     'followups' => "TEXT DEFAULT ''",
+    // השתלמות שההדרכה הזו שייכת לה (או חלק ממנה); ריק = הדרכה עצמאית
+    'course_id' => "INTEGER DEFAULT NULL",
 ] as $col => $decl) {
     try { $db->exec("ALTER TABLE trainings ADD COLUMN $col $decl"); } catch (Throwable $e) { /* exists */ }
 }
+
+// השתלמויות: סילבוס, מטלה, מחוון ונוסח "ברוכים הבאים". מפגש הוא אובייקט בתוך sessions (JSON).
+$db->exec("CREATE TABLE IF NOT EXISTS courses (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    client_id TEXT DEFAULT '',
+    name TEXT NOT NULL DEFAULT '',
+    number TEXT DEFAULT '',                 -- מס' השתלמות (מצפן), ניתן אחרי אישור
+    summary TEXT DEFAULT '',                -- שורת תיאור: קהל, ימים, היקף, הערות כלליות
+    sessions TEXT DEFAULT '',               -- JSON [{n,date,date_text,from,to,hours,mode,mode_text,topic,content,product,facilitator,mine}]
+    assignment TEXT DEFAULT '',             -- מטלת הסיכום והדרישות
+    rubric TEXT DEFAULT '',                 -- JSON {headers:[..],rows:[[..]]} או טקסט חופשי
+    syllabus_url TEXT DEFAULT '',
+    meet_url TEXT DEFAULT '',
+    classroom_url TEXT DEFAULT '',
+    group_url TEXT DEFAULT '',              -- הזמנה לקבוצה ב'חומר פתוח'
+    welcome TEXT DEFAULT '',                -- נוסח מייל ברוכים הבאים (ריק = נבנה מהשדות)
+    notes TEXT DEFAULT '',
+    status TEXT DEFAULT 'active',           -- active | done | archived
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+)");
 
 // רעיונות לאפליקציות: כל אפליקציה היא מיכל, ובתוכה רשימה מסודרת אחת של פריטים.
 // היררכיה קלה מושגת ע"י פריט מסוג heading שמשמש ככותרת קטנה בתוך הרשימה —
@@ -423,6 +469,39 @@ function resolveProjectInto($db, &$data) {
         logHistory($db, 'project', $pid, 'create', rowOrFail($db, 'projects', $pid));
     }
     $data['project_id'] = (int)$pid;
+}
+
+/** Find a course by id or by a readable name fragment. Ambiguity -> 409 with candidates. */
+function resolveCourseId($db, $ref) {
+    if (is_numeric($ref)) return (int)$ref;
+    $m = trim((string)$ref);
+    if ($m === '') fail('provide a course id or name');
+    $st = $db->prepare("SELECT id, name, number FROM courses WHERE name LIKE ? AND status != 'archived' ORDER BY id");
+    $st->execute(['%' . $m . '%']);
+    $rows = $st->fetchAll(PDO::FETCH_ASSOC);
+    if (!$rows) fail("no course matches \"$m\"", 404);
+    if (count($rows) > 1) fail("\"$m\" matches " . count($rows) . " courses — refine or use the id", 409, ['candidates' => $rows]);
+    return (int)$rows[0]['id'];
+}
+
+/** {"course":"name fragment"} on a training -> course_id. Empty string detaches. */
+function resolveCourseInto($db, &$data) {
+    if (!array_key_exists('course', $data)) return;
+    $ref = $data['course']; unset($data['course']);
+    $data['course_id'] = ($ref === '' || $ref === null) ? null : resolveCourseId($db, $ref);
+}
+
+/** sessions / rubric may arrive as real JSON (array/object) or as an already-encoded string. */
+function normalizeCourseData(&$data) {
+    foreach (COURSE_JSON_FIELDS as $f) {
+        if (!array_key_exists($f, $data)) continue;
+        $v = $data[$f];
+        if (is_array($v)) $data[$f] = json_encode($v, JSON_UNESCAPED_UNICODE);
+        elseif ($f === 'sessions' && is_string($v) && $v !== '') {
+            $d = json_decode($v, true);
+            if (!is_array($d)) fail('sessions must be a JSON array');
+        }
+    }
 }
 
 /** Resolve a task by {"id"} or {"match": title-substring}. $scope: 'open' | 'done' | 'any'. */
@@ -864,11 +943,75 @@ function dispatch($db, $action, $data) {
             'trainings' => $db->query("SELECT * FROM trainings ORDER BY CASE WHEN date='' THEN 1 ELSE 0 END, date, id")->fetchAll(PDO::FETCH_ASSOC),
             'apps' => $db->query("SELECT * FROM apps ORDER BY sort_order, id")->fetchAll(PDO::FETCH_ASSOC),
             'app_items' => $db->query("SELECT * FROM app_items ORDER BY app_id, sort_order, id")->fetchAll(PDO::FETCH_ASSOC),
+            'courses' => $db->query("SELECT * FROM courses WHERE status != 'archived' ORDER BY id")->fetchAll(PDO::FETCH_ASSOC),
+            'settings' => ['welcome_signature' => getSetting($db, 'welcome_signature')],
             'now' => gmdate('Y-m-d H:i:s'),
         ];
     }
 
+    case 'setting_set': {
+        $k = (string)($data['key'] ?? '');
+        if (!in_array($k, SETTING_KEYS, true)) fail('unknown setting; allowed: ' . implode(', ', SETTING_KEYS));
+        setSetting($db, $k, (string)($data['value'] ?? ''));
+        return ['key' => $k, 'value' => getSetting($db, $k)];
+    }
+
+    case 'courses': {
+        // compact listing for agents: no long text, just what is needed to pick one
+        $rows = $db->query("SELECT * FROM courses WHERE status != 'archived' ORDER BY id")->fetchAll(PDO::FETCH_ASSOC);
+        return ['courses' => array_map(function ($c) {
+            $s = json_decode($c['sessions'] ?: '[]', true) ?: [];
+            $mine = count(array_filter($s, function ($x) { return !isset($x['mine']) || $x['mine']; }));
+            return ['id' => (int)$c['id'], 'name' => $c['name'], 'number' => $c['number'],
+                    'sessions' => count($s), 'my_sessions' => $mine,
+                    'first' => $s ? ($s[0]['date'] ?? '') : ''];
+        }, $rows)];
+    }
+
+    case 'course_upsert': {
+        // by id, else client_id (idempotent offline retry), else by readable name via {"match":"..."}, else insert
+        normalizeCourseData($data);
+        $id = 0;
+        if (!empty($data['id']) && is_numeric($data['id'])) $id = (int)$data['id'];
+        elseif (!empty($data['client_id'])) {
+            $st = $db->prepare("SELECT id FROM courses WHERE client_id = ? LIMIT 1");
+            $st->execute([$data['client_id']]);
+            $id = (int)$st->fetchColumn();
+        }
+        if (!$id && !empty($data['match'])) $id = resolveCourseId($db, $data['match']);
+        if ($id) {
+            $before = rowOrFail($db, 'courses', $id);
+            $sets = []; $vals = [];
+            foreach (COURSE_FIELDS as $f) if (array_key_exists($f, $data)) { $sets[] = "$f = ?"; $vals[] = $data[$f]; }
+            if (!$sets) fail('no fields to update');
+            $sets[] = "updated_at = datetime('now')";
+            $vals[] = $id;
+            $db->prepare("UPDATE courses SET " . implode(', ', $sets) . " WHERE id = ?")->execute($vals);
+            logHistory($db, 'course', $id, 'update', $before);
+            return ['course' => rowOrFail($db, 'courses', $id)];
+        }
+        if (trim((string)($data['name'] ?? '')) === '') fail('name required');
+        $cols = []; $vals = [];
+        foreach (COURSE_FIELDS as $f) if (array_key_exists($f, $data)) { $cols[] = $f; $vals[] = $data[$f]; }
+        $ph = implode(',', array_fill(0, count($cols), '?'));
+        $db->prepare("INSERT INTO courses (" . implode(',', $cols) . ") VALUES ($ph)")->execute($vals);
+        $row = rowOrFail($db, 'courses', (int)$db->lastInsertId());
+        logHistory($db, 'course', $row['id'], 'create', $row);
+        return ['course' => $row];
+    }
+
+    case 'course_delete': {
+        $id = resolveCourseId($db, $data['id'] ?? ($data['match'] ?? ''));
+        $before = rowOrFail($db, 'courses', $id);
+        logHistory($db, 'course', $id, 'delete', $before);
+        // trainings that pointed at it simply become standalone again
+        $db->prepare("UPDATE trainings SET course_id = NULL WHERE course_id = ?")->execute([$id]);
+        $db->prepare("DELETE FROM courses WHERE id = ?")->execute([$id]);
+        return ['deleted' => $id];
+    }
+
     case 'training_upsert': {
+        resolveCourseInto($db, $data);
         // Update by id; else by client_id (idempotent for offline retries); else insert.
         $id = 0;
         if (!empty($data['id']) && is_numeric($data['id'])) {
@@ -1115,8 +1258,8 @@ function dispatch($db, $action, $data) {
         $h = rowOrFail($db, 'history', $hid);
         $snap = json_decode($h['snapshot'], true);
         if (!$snap || empty($snap['id'])) fail('bad snapshot');
-        $tables = ['project' => 'projects', 'training' => 'trainings', 'app' => 'apps', 'app_item' => 'app_items', 'task' => 'tasks'];
-        $fields = ['project' => PROJECT_FIELDS, 'training' => TRAINING_FIELDS, 'app' => APP_FIELDS, 'app_item' => APP_ITEM_FIELDS, 'task' => TASK_FIELDS];
+        $tables = ['project' => 'projects', 'training' => 'trainings', 'app' => 'apps', 'app_item' => 'app_items', 'task' => 'tasks', 'course' => 'courses'];
+        $fields = ['project' => PROJECT_FIELDS, 'training' => TRAINING_FIELDS, 'app' => APP_FIELDS, 'app_item' => APP_ITEM_FIELDS, 'task' => TASK_FIELDS, 'course' => COURSE_FIELDS];
         $table = $tables[$h['entity']] ?? 'tasks';
         $allowed = $fields[$h['entity']] ?? TASK_FIELDS;
         $st = $db->prepare("SELECT * FROM $table WHERE id = ?");
@@ -1342,6 +1485,7 @@ function dispatch($db, $action, $data) {
             'trainings' => $db->query("SELECT * FROM trainings")->fetchAll(PDO::FETCH_ASSOC),
             'apps' => $db->query("SELECT * FROM apps")->fetchAll(PDO::FETCH_ASSOC),
             'app_items' => $db->query("SELECT * FROM app_items")->fetchAll(PDO::FETCH_ASSOC),
+            'courses' => $db->query("SELECT * FROM courses")->fetchAll(PDO::FETCH_ASSOC),
             'history' => array_map(
                 function ($r) { $r['snapshot'] = json_decode($r['snapshot'], true); return $r; },
                 $db->query("SELECT * FROM history")->fetchAll(PDO::FETCH_ASSOC)
