@@ -1883,6 +1883,18 @@ function openTrainingSheet(id) {
               <span class="cell-label">${ic('star', 12)} מס' השתלמות</span>
               <input type="text" id="ts-course-num" inputmode="numeric" placeholder="נקבע אחרי האישור">
             </label>
+            <div class="course-links hidden" id="ts-course-links">
+              <label class="cell"><span class="cell-label">${ic('messageCircle', 12)} קבוצת וואטסאפ</span>
+                <div class="url-row">
+                  <input type="url" id="ts-course-wa" dir="ltr" placeholder="https://chat.whatsapp.com/...">
+                  <button type="button" class="icon-btn" data-copyfield="ts-course-wa" title="העתקה">${ic('copy', 15)}</button>
+                </div></label>
+              <label class="cell"><span class="cell-label">${ic('users', 12)} קבוצה בחומר פתוח</span>
+                <div class="url-row">
+                  <input type="url" id="ts-course-grp" dir="ltr" placeholder="https://openstuff.co.il/groups/...">
+                  <button type="button" class="icon-btn" data-copyfield="ts-course-grp" title="העתקה">${ic('copy', 15)}</button>
+                </div></label>
+            </div>
             <div class="course-pick-btns" id="ts-course-btns"></div>
           </div>
 
@@ -2028,7 +2040,13 @@ function openTrainingSheet(id) {
     box.innerHTML = c ? courseButtons(c, { date: $('#ts-date').value }) : '';
     // המספר שייך להשתלמות עצמה (משותף לכל ההדרכות שלה), לכן נטען ממנה ונשמר אליה
     $('#ts-course-num-wrap').classList.toggle('hidden', !c);
-    if (c && numLoadedFor !== c.id) { $('#ts-course-num').value = c.number || ''; numLoadedFor = c.id; }
+    $('#ts-course-links').classList.toggle('hidden', !c);
+    if (c && numLoadedFor !== c.id) {
+      $('#ts-course-num').value = c.number || '';
+      $('#ts-course-wa').value = c.whatsapp_url || '';
+      $('#ts-course-grp').value = c.group_url || '';
+      numLoadedFor = c.id;
+    }
     $$('#ts-course-btns [data-course-open]').forEach(b => b.onclick = e => {
       e.preventDefault();
       openCourse(+b.dataset.course, b.dataset.courseOpen, { focusDate: $('#ts-date').value });
@@ -2071,7 +2089,11 @@ function openTrainingSheet(id) {
     o.course_id = courseSel ? (courseSel.value ? +courseSel.value : null) : (t.course_id || null);
     // נכלל בטיוטה כדי שלא יאבד, ומוסר לפני השליחה (שייך להשתלמות, לא להדרכה)
     const num = $('#ts-course-num');
-    if (num && o.course_id) o.course_number = num.value.trim();
+    if (num && o.course_id) {
+      o.course_number = num.value.trim();
+      o.course_wa = $('#ts-course-wa').value.trim();
+      o.course_grp = $('#ts-course-grp').value.trim();
+    }
     return o;
   };
   const applyTraining = d => {
@@ -2090,6 +2112,8 @@ function openTrainingSheet(id) {
     }
     if (d.course_id !== undefined && courseSel) { courseSel.value = d.course_id || ''; renderCourseBtns(); }
     if (d.course_number !== undefined && $('#ts-course-num')) $('#ts-course-num').value = d.course_number;
+    if (d.course_wa !== undefined && $('#ts-course-wa')) $('#ts-course-wa').value = d.course_wa;
+    if (d.course_grp !== undefined && $('#ts-course-grp')) $('#ts-course-grp').value = d.course_grp;
     dayHint();
     $$('#task-sheet textarea').forEach(el => grow(el));
   };
@@ -2116,15 +2140,18 @@ function openTrainingSheet(id) {
   $('#sheet-backdrop').onclick = backdropClose;
   $('#ts-save').onclick = async () => {
     const payload = { ...trainingRef(t), client_id: t.client_id || ('c' + Date.now().toString(36)), ...collectTraining() };
-    const courseNumber = payload.course_number;
-    delete payload.course_number;
+    // המספר והקישורים שייכים להשתלמות, לא להדרכה: מוסרים מה-payload ונשמרים עליה
+    const onCourse = { number: payload.course_number, whatsapp_url: payload.course_wa, group_url: payload.course_grp };
+    delete payload.course_number; delete payload.course_wa; delete payload.course_grp;
     clearFormDraft('training', draftId);
     closeSheet({ discard: true });
     await saveTraining(payload);
-    // המספר נשמר על ההשתלמות רק אם השתנה; נכשל (אין רשת)? מודיעים ולא שותקים
+    // נשמר רק מה שהשתנה; נכשל (אין רשת)? saveCourse מודיע ולא שותק
     const c = courseById(payload.course_id);
-    if (c && courseNumber !== undefined && courseNumber !== (c.number || '')) {
-      if (await saveCourse({ id: c.id, number: courseNumber })) render();
+    if (c) {
+      const changes = {};
+      Object.entries(onCourse).forEach(([k, v]) => { if (v !== undefined && v !== (c[k] || '')) changes[k] = v; });
+      if (Object.keys(changes).length && await saveCourse({ id: c.id, ...changes })) render();
     }
   };
 

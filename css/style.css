@@ -1657,3 +1657,6 @@ button.chip:hover { transform: translateY(-1px); border-color: var(--ink-soft); 
 }
 .btn-quiet-danger:hover { background: var(--coral-soft); }
 .btn-quiet-danger.armed, .btn-danger.armed { background: #D8402F; color: #fff; border-color: #D8402F; }
+.course-links { display: flex; flex-direction: column; gap: 8px; }
+.course-links .url-row { display: flex; gap: 6px; align-items: center; }
+.course-links .url-row input { flex: 1; min-width: 0; }
