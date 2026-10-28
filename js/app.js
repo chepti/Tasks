@@ -1353,7 +1353,9 @@ function copyRich(text, msg) {
 }
 
 /* ---- חלון ההשתלמות: שלוש לשוניות (סילבוס / מטלה ומחוון / ברוכים הבאים) ---- */
+let lastCourseOpts = {};
 function openCourse(id, tab = 'syl', opts = {}) {
+  lastCourseOpts = opts;
   const c = courseById(id);
   if (!c) { toast('ההשתלמות לא נמצאה'); return; }
   const TABS = [['syl', 'graduationCap', 'סילבוס'], ['asg', 'fileText', 'מטלה ומחוון'], ['wel', 'mail', 'מייל ברוכים הבאים']];
@@ -1381,46 +1383,56 @@ function openCourse(id, tab = 'syl', opts = {}) {
   else bindCourseSyllabus(c);
 }
 
-function sessionCard(s, focusDate) {
+/* טבלה קומפקטית — נועדה להיכנס למסך אחד ולהצטלם: שורה למפגש, בלי כרטיסים.
+   תאריך ושעה בעמודה אחת (שתי שורות קטנות), אופן כתג קצר, נושא, תוצר, ומי אחראי/ת. */
+const SMODE_SHORT = { online: 'מקוון', async: 'א-סינכרוני', physical: 'פנים אל פנים', hybrid: 'היברידי' };
+function sessionRow(s, focusDate, showContent) {
   const mine = sessionIsMine(s), md = SMODE[s.mode];
   const past = s.date && s.date < todayStr();
   const focus = focusDate && s.date === focusDate;
-  const place = s.mode_text && (!md || s.mode_text !== md.label) ? s.mode_text : '';
+  let day = '', time = '';
+  if (s.date) {
+    const d = new Date(s.date + 'T12:00:00');
+    day = `<b>${DAY_SHORT[d.getDay()]}׳</b> ${shortDate(s.date)}`;
+    time = s.from ? `${s.from}–${s.to || ''}` : '';
+  } else day = `<span class="st-free">${esc(s.date_text || 'לא נקבע')}</span>`;
+  // מתוך "אופן" חופשי משאירים רק מה שהתג לא אומר כבר (למשל "מחוץ לפסג"ה", חדר, פלטפורמה)
+  const MODE_WORDS = /^(סינכרוני|א-?סינכרוני|אסינכרוני|וירטואלי|מקוון|פנים אל פנים|פא"פ|סדנה|זום)$/;
+  const place = (s.mode_text || '').split(/\s*[–·]\s*/).map(p => p.trim()).filter(p => p && !MODE_WORDS.test(p)).join(' · ');
   return `
-  <div class="sess ${mine ? '' : 'not-mine'} ${past ? 'past' : ''} ${focus ? 'focus' : ''}">
-    <div class="sess-n">${esc(s.n)}</div>
-    <div class="sess-main">
-      <div class="sess-top">
-        <span class="sess-when">${esc(sessionWhen(s))}</span>
-        ${md ? `<span class="tag t-${md.color}">${ic(md.icon, 11)}${md.label}</span>` : ''}
-        ${s.hours ? `<span class="tag t-gray">${esc(s.hours)} שעות אק׳</span>` : ''}
-        ${focus ? `<span class="tag t-coral">${ic('star', 11)}ההדרכה הזו</span>` : ''}
-        ${mine ? '' : `<span class="tag t-rose">${ic('users', 11)}לא באחריותי${s.facilitator ? ' · ' + esc(s.facilitator) : ''}</span>`}
-      </div>
-      <div class="sess-topic">${esc(s.topic)}</div>
-      ${place ? `<div class="sess-place">${esc(place)}</div>` : ''}
-      ${s.content || s.product ? `
-        <details class="sess-more"><summary>פירוט ותוצר</summary>
-          ${s.content ? `<p>${esc(s.content)}</p>` : ''}
-          ${s.product ? `<p class="sess-product"><b>תוצר:</b> ${esc(s.product)}</p>` : ''}
-        </details>` : ''}
-    </div>
-  </div>`;
+  <tr class="${mine ? '' : 'not-mine'} ${past ? 'past' : ''} ${focus ? 'focus' : ''}">
+    <td class="st-n">${esc(s.n)}</td>
+    <td class="st-when">${day}${time ? `<span class="st-time">${esc(time)}</span>` : ''}</td>
+    <td class="st-mode">${md ? `<span class="st-mode-tag m-${md.color}">${ic(md.icon, 11)}${SMODE_SHORT[s.mode]}</span>` : ''}${s.hours ? `<span class="st-hours">${esc(s.hours)} שע׳</span>` : ''}</td>
+    <td class="st-topic">${focus ? `<span class="tag t-coral st-here">${ic('star', 10)}ההדרכה הזו</span>` : ''}${esc(s.topic)}${place ? `<span class="st-place">${esc(place)}</span>` : ''}${showContent && s.content ? `<span class="st-content">${esc(s.content)}</span>` : ''}</td>
+    <td class="st-product">${esc(s.product || '')}</td>
+    <td class="st-who">${mine ? `<span class="st-mine">${ic('check', 12)}שלי</span>` : `<span class="st-other">${esc(s.facilitator || 'אחר/ת')}</span>`}</td>
+  </tr>`;
+}
+function sessionTable(list, focusDate, showContent) {
+  if (!list.length) return `<div class="fu-empty">אין מפגשים — אפשר להוסיף בעריכה</div>`;
+  const hasProduct = list.some(s => s.product);
+  return `<div class="sess-table-wrap"><table class="sess-table ${hasProduct ? '' : 'no-product'}">
+    <thead><tr><th>#</th><th>מועד</th><th>אופן</th><th>נושא</th>${hasProduct ? '<th class="st-product">תוצר</th>' : ''}<th>אחראי/ת</th></tr></thead>
+    <tbody>${list.map(s => sessionRow(s, focusDate, showContent)).join('')}</tbody>
+  </table></div>`;
 }
 
 function courseSyllabusHtml(c, opts) {
   const st = courseStats(c), list = courseSessions(c);
   const allMine = st.total > 0 && st.mine === st.total;
+  const anyContent = list.some(s => s.content);
   return `
-    ${c.summary ? `<p class="course-summary">${esc(c.summary)}</p>` : ''}
     <div class="resp-banner ${allMine ? 'ok' : 'partial'}">
       ${ic(allMine ? 'check' : 'users', 16)}
       <span>${!st.total ? 'עוד לא הוזנו מפגשים'
         : allMine ? `כל ${st.total} המפגשים באחריותי`
         : `באחריותי <b>${st.mine}</b> מתוך ${st.total} מפגשים`}${st.hours ? ` · ${st.hours} שעות אקדמיות` : ''}</span>
+      ${anyContent ? `<button type="button" class="pill-toggle small ${COURSE_UI.showContent ? 'on' : ''}" id="cm-content" title="להציג גם את תוכן כל מפגש">${ic('listTodo', 13)} תוכן</button>` : ''}
       <button type="button" class="btn btn-ghost resp-copy" id="cm-copy" title="כל הסילבוס כטקסט, להדבקה בשיחה עם הבינה">${ic('copy', 14)} העתקה</button>
     </div>
-    <div class="sess-list">${list.map(s => sessionCard(s, opts.focusDate)).join('') || `<div class="fu-empty">אין מפגשים — אפשר להוסיף בעריכה</div>`}</div>
+    ${sessionTable(list, opts.focusDate, COURSE_UI.showContent)}
+    ${c.summary ? `<p class="course-summary course-summary-foot">${esc(c.summary)}</p>` : ''}
     <label class="cell full course-note">
       <span class="cell-label">${ic('pencil', 12)} הערה קטנה</span>
       <textarea id="cm-notes" rows="2" placeholder="מה חשוב לזכור על ההשתלמות הזו?">${esc(c.notes || '')}</textarea>
@@ -1434,7 +1446,9 @@ function bindCourseSyllabus(c) {
     if (await saveCourse({ id: c.id, notes: ta.value.trim() })) toast('ההערה נשמרה');
   };
   $('#cm-copy').onclick = () => copyText(courseToText(c), 'הסילבוס הועתק');
-  const f = $('#modal .sess.focus');
+  const tg = $('#cm-content');
+  if (tg) tg.onclick = () => { COURSE_UI.showContent = !COURSE_UI.showContent; openCourse(c.id, 'syl', lastCourseOpts); };
+  const f = $('#modal tr.focus');
   if (f) f.scrollIntoView({ block: 'center' });
 }
 

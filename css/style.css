@@ -1571,3 +1571,51 @@ button.chip:hover { transform: translateY(-1px); border-color: var(--ink-soft); 
 .course-actions { margin-top: 8px; }
 .hero-course { margin-top: 10px; padding-top: 10px; border-top: 1px dashed rgba(61,58,80,.18); align-items: center; }
 .hero-course-name { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; font-size: .85rem; }
+/* ============ סילבוס כטבלה קומפקטית (למבט אחד ולצילום מסך) ============ */
+.sess-table-wrap { margin-bottom: 12px; }
+.sess-table { width: 100%; border-collapse: collapse; font-size: .84rem; line-height: 1.35; }
+.sess-table th {
+  text-align: start; font-size: .7rem; font-weight: 700; color: var(--ink-soft);
+  padding: 4px 8px 6px; white-space: nowrap; border-bottom: 2px solid var(--bg-soft);
+}
+.sess-table td { padding: 7px 8px; vertical-align: top; border-bottom: 1px solid var(--bg-soft); }
+.sess-table tbody tr:last-child td { border-bottom: none; }
+.st-n { width: 26px; color: var(--ink-faint); font-weight: 700; text-align: center; }
+.st-when { white-space: nowrap; width: 92px; }
+.st-time { display: block; font-size: .74rem; color: var(--ink-soft); direction: ltr; text-align: end; }
+.st-free { color: var(--ink-soft); font-style: italic; }
+.st-mode { width: 88px; white-space: nowrap; }
+.st-mode-tag { display: inline-flex; align-items: center; gap: 4px; font-size: .72rem; font-weight: 600; padding: 2px 8px; border-radius: var(--r-pill); }
+.st-mode-tag.m-lilac { background: var(--lilac-soft); color: #5B49C9; }
+.st-mode-tag.m-peach { background: var(--peach-soft); color: #A8610F; }
+.st-mode-tag.m-sky   { background: var(--sky-soft);   color: #1F7FC4; }
+.st-mode-tag.m-teal  { background: var(--teal-soft);  color: #14705F; }
+.st-hours { display: block; font-size: .7rem; color: var(--ink-soft); margin-top: 2px; }
+.st-topic { font-weight: 600; word-break: break-word; }
+.st-place { display: block; font-weight: 400; font-size: .72rem; color: var(--ink-soft); }
+.st-content { display: block; font-weight: 400; font-size: .78rem; color: var(--ink-soft); margin-top: 3px; }
+.st-here { margin-inline-end: 6px; vertical-align: 1px; }
+.st-product { width: 27%; color: var(--ink-soft); font-size: .78rem; }
+.sess-table.no-product .st-product { display: none; }
+.st-who { width: 84px; white-space: nowrap; }
+.st-mine { display: inline-flex; align-items: center; gap: 3px; font-size: .74rem; font-weight: 700; color: #14705F; }
+.st-other { display: inline-block; font-size: .72rem; font-weight: 600; background: var(--rose-soft); color: #A62D63; border-radius: var(--r-pill); padding: 2px 9px; white-space: normal; line-height: 1.25; }
+.sess-table tr.not-mine td:not(.st-who) { opacity: .55; }
+.sess-table tr.not-mine { background: repeating-linear-gradient(135deg, transparent 0 6px, rgba(61,58,80,.035) 6px 12px); }
+.sess-table tr.past:not(.focus) .st-topic { color: var(--ink-soft); font-weight: 500; }
+.sess-table tr.focus td { background: var(--coral-soft); }
+.sess-table tr.focus td:first-child { border-start-start-radius: 12px; border-end-start-radius: 12px; }
+.sess-table tr.focus td:last-child { border-start-end-radius: 12px; border-end-end-radius: 12px; }
+.course-summary-foot { font-size: .76rem; margin: 4px 0 12px; }
+@media (max-width: 640px) {
+  .sess-table .st-product, .sess-table th.st-product { display: none; }
+  .st-when { width: 70px; } .st-mode { width: 74px; } .st-who { width: 68px; }
+  .sess-table td { padding: 6px 5px; }
+}/* מרווחים צפופים יותר בחלון ההשתלמות — שיותר ייכנס למסך אחד */
+.modal.modal-wide { padding-top: 18px; }
+.course-head { margin-bottom: 8px; }
+.course-tabs { margin-bottom: 10px; }
+.resp-banner { padding: 7px 12px; margin-bottom: 8px; }
+.sess-table td { padding: 5px 8px; }
+.st-who { width: 104px; }
+.st-other { padding: 2px 8px; }
