@@ -1627,3 +1627,4 @@ button.chip:hover { transform: translateY(-1px); border-color: var(--ink-soft); 
 .course-new input { grid-column: 1 / -1; }
 .course-new input[id="ts-cn-num"] { grid-column: 1 / -1; }
 .course-new .btn { padding: 8px 12px; }
+.se-line .se-num { flex: 0 0 46px; text-align: center; font-weight: 700; padding: 7px 4px; }

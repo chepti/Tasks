@@ -1633,7 +1633,7 @@ function openCourseEditor(id) {
   const sessRow = (s, i) => `
     <div class="se-row ${sessionIsMine(s) ? '' : 'not-mine'}" data-si="${i}">
       <div class="se-line">
-        <span class="sess-n">${i + 1}</span>
+        <input type="text" data-f="n" class="se-num" inputmode="numeric" title="מספר המפגש ברצף ההשתלמות" value="${esc(s.n || i + 1)}">
         <input type="date" data-f="date" value="${esc(s.date || '')}">
         <input type="time" data-f="from" value="${esc(s.from || '')}">
         <input type="time" data-f="to" value="${esc(s.to || '')}">
@@ -1653,7 +1653,8 @@ function openCourseEditor(id) {
       </details>
     </div>`;
   const renderSess = () => {
-    sess.forEach((s, i) => { s.n = i + 1; });
+    // המספר הוא של הרצף המלא של ההשתלמות (למשל 1,3,5,11) — ממספרים רק מפגש בלי מספר
+    sess.forEach((s, i) => { if (!s.n) s.n = i + 1; });
     $('#ce-sess').innerHTML = sess.map(sessRow).join('') || '<div class="fu-empty">אין מפגשים עדיין</div>';
   };
   renderSess();
@@ -1663,6 +1664,7 @@ function openCourseEditor(id) {
     if (!row || !el.dataset.f) return;
     let val = el.value;
     if (el.dataset.f === 'hours') val = val.trim() === '' ? null : (parseFloat(val) || null);
+    if (el.dataset.f === 'n') val = parseInt(val, 10) || '';
     sess[+row.dataset.si][el.dataset.f] = val;
   };
   const box = $('#ce-sess');
@@ -1674,7 +1676,7 @@ function openCourseEditor(id) {
     else if (e.target.closest('[data-smine]')) { sess[i].mine = !sessionIsMine(sess[i]); renderSess(); touchCourse(); }
   };
   $('#ce-addsess').onclick = () => {
-    sess.push({ n: sess.length + 1, date: '', date_text: '', from: '', to: '', hours: null, mode: '', mode_text: '', topic: '', content: '', product: '', facilitator: '', mine: true });
+    sess.push({ n: Math.max(0, ...sess.map(x => +x.n || 0)) + 1, date: '', date_text: '', from: '', to: '', hours: null, mode: '', mode_text: '', topic: '', content: '', product: '', facilitator: '', mine: true });
     renderSess(); touchCourse();
     const last = $('#ce-sess [data-si]:last-child [data-f="topic"]'); if (last) last.focus();
   };
