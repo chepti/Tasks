@@ -1012,7 +1012,7 @@ function trainingCard(t, { finished = false } = {}) {
       <div style="flex:1;min-width:0">
         <div class="training-topic">${esc(t.topic || t.place || 'הדרכה חדשה')}</div>
         <div class="training-meta">
-          ${course ? `<span class="tag t-lilac">${ic('graduationCap', 11)}${esc(course.name)}</span>` : ''}
+          ${course ? `<span class="tag t-lilac">${ic('graduationCap', 11)}${esc(course.name)}${course.number ? ` · מס' ${esc(course.number)}` : ''}</span>` : ''}
           ${t.mode && TMODE[t.mode] ? `<span class="tag t-${TMODE[t.mode].color}">${ic(TMODE[t.mode].icon, 11)}${TMODE[t.mode].label}</span>` : ''}
           ${t.place ? `<span class="tag t-sky">${ic('mapPin', 11)}${esc(t.place)}</span>` : ''}
           <span class="tag ${t.date ? 't-lilac' : 't-gray'}">${ic('calendar', 11)}${trainingDateLabel(t)}</span>
@@ -1835,6 +1835,10 @@ function openTrainingSheet(id) {
               <option value="">— הדרכה עצמאית —</option>
               ${coursesList().map(c => `<option value="${c.id}" ${t.course_id == c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
             </select>
+            <label class="cell course-num hidden" id="ts-course-num-wrap">
+              <span class="cell-label">${ic('star', 12)} מס' השתלמות</span>
+              <input type="text" id="ts-course-num" inputmode="numeric" placeholder="נקבע אחרי האישור">
+            </label>
             <div class="course-pick-btns" id="ts-course-btns"></div>
           </div>` : ''}
 
@@ -1969,10 +1973,14 @@ function openTrainingSheet(id) {
   // שיוך להשתלמות: הכפתורים תמיד מתייחסים למה שנבחר כרגע, גם לפני שמירה.
   // חייב להיות מוגדר לפני הטיוטה — היא קוראת ל-collectTraining מיד.
   const courseSel = $('#ts-course');
+  let numLoadedFor = null;
   const renderCourseBtns = () => {
     const box = $('#ts-course-btns'); if (!box || !courseSel) return;
     const c = courseById(courseSel.value);
     box.innerHTML = c ? courseButtons(c, { date: $('#ts-date').value }) : '';
+    // המספר שייך להשתלמות עצמה (משותף לכל ההדרכות שלה), לכן נטען ממנה ונשמר אליה
+    $('#ts-course-num-wrap').classList.toggle('hidden', !c);
+    if (c && numLoadedFor !== c.id) { $('#ts-course-num').value = c.number || ''; numLoadedFor = c.id; }
     $$('#ts-course-btns [data-course-open]').forEach(b => b.onclick = e => {
       e.preventDefault();
       openCourse(+b.dataset.course, b.dataset.courseOpen, { focusDate: $('#ts-date').value });
@@ -1992,6 +2000,9 @@ function openTrainingSheet(id) {
     o.followups = fuEncode(fu);
     // בלי הרשימה (אין השתלמויות עדיין) לא נוגעים בשיוך הקיים
     o.course_id = courseSel ? (courseSel.value ? +courseSel.value : null) : (t.course_id || null);
+    // נכלל בטיוטה כדי שלא יאבד, ומוסר לפני השליחה (שייך להשתלמות, לא להדרכה)
+    const num = $('#ts-course-num');
+    if (num && o.course_id) o.course_number = num.value.trim();
     return o;
   };
   const applyTraining = d => {
@@ -2009,6 +2020,7 @@ function openTrainingSheet(id) {
       try { const l = JSON.parse(d.followups); if (Array.isArray(l)) { fu = l; renderFu(); } } catch (e) {}
     }
     if (d.course_id !== undefined && courseSel) { courseSel.value = d.course_id || ''; renderCourseBtns(); }
+    if (d.course_number !== undefined && $('#ts-course-num')) $('#ts-course-num').value = d.course_number;
     dayHint();
     $$('#task-sheet textarea').forEach(el => grow(el));
   };
@@ -2035,9 +2047,16 @@ function openTrainingSheet(id) {
   $('#sheet-backdrop').onclick = backdropClose;
   $('#ts-save').onclick = async () => {
     const payload = { ...trainingRef(t), client_id: t.client_id || ('c' + Date.now().toString(36)), ...collectTraining() };
+    const courseNumber = payload.course_number;
+    delete payload.course_number;
     clearFormDraft('training', draftId);
     closeSheet({ discard: true });
     await saveTraining(payload);
+    // המספר נשמר על ההשתלמות רק אם השתנה; נכשל (אין רשת)? מודיעים ולא שותקים
+    const c = courseById(payload.course_id);
+    if (c && courseNumber !== undefined && courseNumber !== (c.number || '')) {
+      if (await saveCourse({ id: c.id, number: courseNumber })) render();
+    }
   };
 
   const del = $('#ts-delete');
