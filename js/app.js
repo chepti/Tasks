@@ -1131,6 +1131,22 @@ function copyText(text, msg) {
     navigator.clipboard.writeText(text).then(done).catch(() => fallbackCopy(text, done));
   } else fallbackCopy(text, done);
 }
+/* מחיקה בשתי לחיצות: הראשונה "מחממת" את הכפתור ל-3.5 שניות והשנייה מבצעת,
+   כדי שלחיצה שגויה (בעיקר בפינה שליד כפתור הסגירה) לא תמחק כלום. */
+function armDelete(btn, run) {
+  const idle = btn.innerHTML;
+  let timer = null;
+  btn.onclick = () => {
+    if (!timer) {
+      btn.classList.add('armed');
+      btn.innerHTML = `${ic('trash', 14)} בטוחה? לחצי שוב למחיקה`;
+      timer = setTimeout(() => { timer = null; btn.classList.remove('armed'); btn.innerHTML = idle; }, 3500);
+      return;
+    }
+    clearTimeout(timer); timer = null;
+    run();
+  };
+}
 function fallbackCopy(text, done) {
   const ta = document.createElement('textarea');
   ta.value = text;
@@ -1810,7 +1826,6 @@ function openTrainingSheet(id) {
       <h3>${id != null ? 'עריכת הדרכה' : 'הדרכה חדשה'}</h3>
       <div class="corner-group">
         <button class="corner-btn" id="ts-copyall" title="העתקת כל הפרטים — להדבקה בשיחה עם הבינה">${ic('copy', 17)}</button>
-        ${id != null ? `<button class="corner-btn danger" id="ts-delete" title="מחיקה">${ic('trash', 17)}</button>` : ''}
       </div>
     </div>
     <div id="ts-draft-slot"></div>
@@ -1913,6 +1928,10 @@ function openTrainingSheet(id) {
       </div>
     </div>
 
+    ${id != null ? `
+    <div class="danger-zone">
+      <button type="button" class="btn-quiet-danger" id="ts-delete" title="מחיקת ההדרכה (נדרשת לחיצה שנייה לאישור)">${ic('trash', 14)} מחיקת ההדרכה</button>
+    </div>` : ''}
     <div class="sheet-actions">
       <button class="btn btn-primary" id="ts-save" style="flex:1">${id != null ? 'שמירה' : 'הוספה'}</button>
     </div>`;
@@ -2110,7 +2129,7 @@ function openTrainingSheet(id) {
   };
 
   const del = $('#ts-delete');
-  if (del) del.onclick = async () => {
+  if (del) armDelete(del, async () => {
     clearFormDraft('training', draftId);
     closeSheet({ discard: true });
     if (isTempTraining(t)) {
@@ -2132,7 +2151,7 @@ function openTrainingSheet(id) {
       } else toast('אופס — ' + e.message);
     }
     saveCache(); render();
-  };
+  });
 }
 
 /* ============ מסך אישור קליטה ============ */
@@ -3514,14 +3533,14 @@ function openTaskSheet(id, prefill = null) {
   };
 
   const del = $('#sheet-delete');
-  if (del) del.onclick = async () => {
+  if (del) armDelete(del, async () => {
     clearFormDraft('task', tDraftId);
     closeSheet({ discard: true });
     await api('task_delete', { id });
     DATA.tasks = DATA.tasks.filter(x => x.id != id);
     render();
     toast('נמחקה (אפשר לשחזר מההיסטוריה)');
-  };
+  });
 }
 
 /** משימת המשך: יורשת פרויקט והקשר מהמשימה שהסתיימה, כך שהשרשור נשאר במקום אחד. */

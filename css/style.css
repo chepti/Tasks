@@ -1628,3 +1628,32 @@ button.chip:hover { transform: translateY(-1px); border-color: var(--ink-soft); 
 .course-new input[id="ts-cn-num"] { grid-column: 1 / -1; }
 .course-new .btn { padding: 8px 12px; }
 .se-line .se-num { flex: 0 0 46px; text-align: center; font-weight: 700; padding: 7px 4px; }
+
+/* ============ סרגל כותרת ושורת פעולות צפים ============
+   כפתור הסגירה (X) והשמירה תמיד גלויים גם כשהטופס ארוך ונגלל. הרקע האטום והשוליים
+   השליליים מונעים מהתוכן הנגלל להבהב בצדדים מאחוריהם. */
+.sheet-topbar, .course-head {
+  position: sticky; top: 0; z-index: 6;
+  background: var(--card);
+  margin-inline: -20px; padding-inline: 20px;
+}
+.sheet-topbar { padding-top: 8px; padding-bottom: 6px; margin-bottom: 0; }
+.course-head { margin-inline: -24px; padding-inline: 24px; padding-bottom: 8px; margin-top: -8px; padding-top: 8px; }
+.sheet .sheet-actions, .modal .sheet-actions {
+  position: sticky; bottom: 0; z-index: 6;
+  background: var(--card);
+  margin-inline: -20px; padding: 12px 20px 6px; margin-top: 14px;
+  box-shadow: 0 -10px 14px -12px rgba(61, 58, 80, .28);
+}
+.modal .sheet-actions { margin-inline: -24px; padding-inline: 24px; }
+
+/* מחיקה: רחוקה מה-X ומה"שמירה", שקטה, ודורשת לחיצה שנייה */
+.danger-zone { display: flex; justify-content: flex-start; margin-top: 22px; padding-top: 14px; border-top: 1.5px dashed var(--bg-soft); }
+.btn-quiet-danger {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: none; border: 1.5px solid transparent; border-radius: var(--r-pill);
+  color: #C9503F; font-family: inherit; font-size: .8rem; font-weight: 600;
+  padding: 7px 12px; cursor: pointer; transition: background .15s, color .15s;
+}
+.btn-quiet-danger:hover { background: var(--coral-soft); }
+.btn-quiet-danger.armed, .btn-danger.armed { background: #D8402F; color: #fff; border-color: #D8402F; }
