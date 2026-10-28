@@ -1619,3 +1619,11 @@ button.chip:hover { transform: translateY(-1px); border-color: var(--ink-soft); 
 .sess-table td { padding: 5px 8px; }
 .st-who { width: 104px; }
 .st-other { padding: 2px 8px; }
+
+/* הוספה מהירה של השתלמות מתוך טופס ההדרכה */
+.course-pick-row { display: flex; gap: 6px; align-items: center; }
+.course-pick-row select { flex: 1; min-width: 0; width: auto; }
+.course-new { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; background: var(--bg-soft); border-radius: 18px; padding: 10px; }
+.course-new input { grid-column: 1 / -1; }
+.course-new input[id="ts-cn-num"] { grid-column: 1 / -1; }
+.course-new .btn { padding: 8px 12px; }

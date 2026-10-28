@@ -1842,19 +1842,27 @@ function openTrainingSheet(id) {
         </div>
 
         <div class="t-side">
-          ${coursesList().length || t.course_id ? `
           ${divider('graduationCap', 'השתלמות')}
           <div class="course-pick">
-            <select id="ts-course">
-              <option value="">— הדרכה עצמאית —</option>
-              ${coursesList().map(c => `<option value="${c.id}" ${t.course_id == c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
-            </select>
+            <div class="course-pick-row">
+              <select id="ts-course">
+                <option value="">— הדרכה עצמאית —</option>
+                ${coursesList().map(c => `<option value="${c.id}" ${t.course_id == c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
+              </select>
+              <button type="button" class="pill-toggle small" id="ts-course-add" title="השתלמות שלא עברה דרך המערכת">${ic('plus', 13)} חדשה</button>
+            </div>
+            <div class="course-new hidden" id="ts-course-new">
+              <input type="text" id="ts-cn-name" placeholder="שם ההשתלמות, למשל: השתלמות לרכזים מתחילים">
+              <input type="text" id="ts-cn-num" inputmode="numeric" placeholder="מס' השתלמות">
+              <button type="button" class="btn btn-primary" id="ts-cn-ok">הוספה</button>
+              <button type="button" class="btn btn-ghost" id="ts-cn-cancel">ביטול</button>
+            </div>
             <label class="cell course-num hidden" id="ts-course-num-wrap">
               <span class="cell-label">${ic('star', 12)} מס' השתלמות</span>
               <input type="text" id="ts-course-num" inputmode="numeric" placeholder="נקבע אחרי האישור">
             </label>
             <div class="course-pick-btns" id="ts-course-btns"></div>
-          </div>` : ''}
+          </div>
 
           ${divider('smile', 'הקהל')}
           <div class="tgrid c2">
@@ -2001,6 +2009,27 @@ function openTrainingSheet(id) {
     });
   };
   if (courseSel) { courseSel.onchange = () => { renderCourseBtns(); touchSheet(); }; renderCourseBtns(); }
+
+  // הוספה מהירה של השתלמות שלא עברה דרך המערכת: שם + מספר, ונבחרת מיד
+  const newBox = $('#ts-course-new');
+  const toggleNew = show => {
+    newBox.classList.toggle('hidden', !show);
+    if (show) $('#ts-cn-name').focus();
+  };
+  $('#ts-course-add').onclick = () => toggleNew(newBox.classList.contains('hidden'));
+  $('#ts-cn-cancel').onclick = () => { toggleNew(false); $('#ts-cn-name').value = ''; $('#ts-cn-num').value = ''; };
+  $('#ts-cn-ok').onclick = async () => {
+    const name = $('#ts-cn-name').value.trim(), number = $('#ts-cn-num').value.trim();
+    if (!name) { $('#ts-cn-name').focus(); toast('צריך שם להשתלמות'); return; }
+    const c = await saveCourse({ client_id: 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name, number });
+    if (!c) return;                                   // אין רשת / שגיאה: נשארים, מה שהוקלד לא אבד
+    courseSel.insertAdjacentHTML('beforeend', `<option value="${c.id}">${esc(c.name)}</option>`);
+    courseSel.value = c.id; numLoadedFor = null;
+    renderCourseBtns(); toggleNew(false);
+    $('#ts-cn-name').value = ''; $('#ts-cn-num').value = '';
+    touchSheet();
+    toast('ההשתלמות נוספה ושויכה להדרכה');
+  };
 
   /* ---- טיוטה מקומית ---- */
   const TS_TEXT = ['topic','place','date','time_from','time_to','contact_name','contact_role','contact_phone',
