@@ -1507,7 +1507,31 @@ function assignmentDesignHtml(c) {
   <p style="margin:18pt 0 0 0;${DOC_FONT}font-size:13pt;font-weight:bold;color:#12788A;text-align:center">בהצלחה רבה!</p>${DOC_FOOT}</div>`;
 }
 
+/* Chrome מנקה HTML בהעתקה ומזריק לטקסט את הרקע של האפליקציה, ובדוקס זה נראה כסימון צבע על כל מילה
+   (ובכותרות לבנות על טורקיז — לא קריא). לכן כל טקסט נעטף ב-span עם רקע וצבע מפורשים שווים לרקע התא. */
+function pinColors(html) {
+  const d = new DOMParser().parseFromString('<body>' + html + '</body>', 'text/html');
+  const up = (el, prop, dflt) => {
+    for (let e = el; e && e.nodeType === 1 && e.tagName !== 'BODY'; e = e.parentElement) {
+      const v = prop === 'bg' ? (e.style.backgroundColor || '') : (e.style.color || '');
+      if (v && v !== 'transparent') return v;
+    }
+    return dflt;
+  };
+  const w = d.createTreeWalker(d.body, NodeFilter.SHOW_TEXT), nodes = [];
+  while (w.nextNode()) if (w.currentNode.nodeValue.trim()) nodes.push(w.currentNode);
+  nodes.forEach(n => {
+    const p = n.parentElement, sp = d.createElement('span');
+    sp.style.backgroundColor = up(p, 'bg', '#ffffff');
+    sp.style.color = up(p, 'fg', '#1f2430');
+    n.replaceWith(sp); sp.appendChild(n);
+  });
+  d.querySelectorAll('p,div').forEach(e => { if (!e.style.backgroundColor) e.style.backgroundColor = '#ffffff'; });
+  return d.body.innerHTML;
+}
+
 function copyHtml(html, text, msg) {
+  html = pinColors(html);
   if (navigator.clipboard && window.ClipboardItem) {
     navigator.clipboard.write([new ClipboardItem({
       'text/plain': new Blob([text], { type: 'text/plain' }),
