@@ -1336,6 +1336,7 @@ function welcomeMissing(c) {
   if (!c.group_url) m.push('קבוצה בחומר פתוח');
   if (!c.whatsapp_url) m.push('קבוצת וואטסאפ');
   if (!c.syllabus_url) m.push('קישור לסילבוס');
+  if (!c.assignment_url) m.push('קישור למטלת סיכום');
   return m;
 }
 
@@ -1352,6 +1353,7 @@ function buildWelcome(c) {
     + (c.group_url ? ` הצטרפו לקבוצה שלנו בפנים, כדי לראות את התוצרים של כולם ולהגיב להם: ${c.group_url}` : ''));
   if (c.whatsapp_url) items.push(`קבוצת הוואטסאפ של ההשתלמות, לעדכונים ושאלות: ${c.whatsapp_url}`);
   if (c.syllabus_url) items.push(`הסילבוס של הקורס, שכולל גם את פירוט המטלה: ${c.syllabus_url}`);
+  if (c.assignment_url) items.push(`מטלת הסיכום והמחוון של ההשתלמות (כדאי להכיר אותם כבר מההתחלה): ${c.assignment_url}`);
   const L = [];
   if (c.number) L.push(`(מס' השתלמות ${c.number})`, '');
   L.push(`כמה דברים חשובים לקראת תחילת ההשתלמות${when ? ' בתאריך: ' + when : ''}`, '');
@@ -1485,6 +1487,11 @@ function rubricHtml(r) {
 }
 function courseAssignmentHtml(c) {
   return `
+    ${c.assignment_url ? `
+    <div class="welcome-actions" style="margin:0 0 14px">
+      <a class="btn btn-ghost" href="${esc(c.assignment_url)}" target="_blank" rel="noopener">${ic('fileText', 15)} פתיחת מסמך המטלה המעוצב</a>
+      <button type="button" class="btn btn-ghost" data-cm-link="${esc(c.assignment_url)}" data-msg="קישור מסמך המטלה הועתק">${ic('copy', 15)} העתקת הקישור</button>
+    </div>` : ''}
     <div class="doc-block">
       <div class="doc-title">${ic('fileText', 16)} מטלת הסיכום והדרישות
         ${c.assignment ? `<button type="button" class="icon-btn" data-cm-copy="asg" title="העתקת המטלה">${ic('copy', 15)}</button>` : ''}</div>
@@ -1497,6 +1504,7 @@ function courseAssignmentHtml(c) {
     </div>`;
 }
 function bindCourseAssignment(c) {
+  $$('#modal [data-cm-link]').forEach(b => b.onclick = () => copyText(b.dataset.cmLink, b.dataset.msg));
   $$('#modal [data-cm-copy]').forEach(b => b.onclick = () =>
     copyText(b.dataset.cmCopy === 'asg' ? c.assignment : rubricToText(courseRubric(c)),
              b.dataset.cmCopy === 'asg' ? 'המטלה הועתקה' : 'המחוון הועתק'));
@@ -1505,6 +1513,7 @@ function bindCourseAssignment(c) {
 const WELCOME_FIELDS = [
   ['number', "מס' השתלמות", ''], ['meet_url', 'קישור למפגשים', 'ltr'], ['classroom_url', 'קלאסרום', 'ltr'],
   ['group_url', 'קבוצה בחומר פתוח', 'ltr'], ['whatsapp_url', 'קבוצת וואטסאפ', 'ltr'], ['syllabus_url', 'קישור לסילבוס', 'ltr'],
+  ['assignment_url', 'קישור למטלת סיכום', 'ltr'],
 ];
 function courseWelcomeHtml(c) {
   const saved = COURSE_UI.welcome[c.id];
@@ -1631,6 +1640,7 @@ function openCourseEditor(id) {
       ${divider('monitor', 'קישורים (לנוסח ברוכים הבאים)')}
       <div class="tgrid c2">
         ${cell('syllabus_url', 'סילבוס', 'fileText', '', true)}
+        ${cell('assignment_url', 'מטלת סיכום (מסמך)', 'listTodo', '', true)}
         ${cell('meet_url', 'קישור למפגשים', 'monitor', '', true)}
         ${cell('classroom_url', 'קלאסרום', 'graduationCap', '', true)}
         ${cell('group_url', 'קבוצה בחומר פתוח', 'users', '', true)}
@@ -1704,7 +1714,7 @@ function openCourseEditor(id) {
     const last = $('#ce-sess [data-si]:last-child [data-f="topic"]'); if (last) last.focus();
   };
 
-  const TXT = ['name', 'number', 'summary', 'syllabus_url', 'meet_url', 'classroom_url', 'group_url', 'whatsapp_url', 'assignment', 'rubric', 'notes'];
+  const TXT = ['name', 'number', 'summary', 'syllabus_url', 'meet_url', 'classroom_url', 'group_url', 'whatsapp_url', 'assignment_url', 'assignment', 'rubric', 'notes'];
   const collect = () => {
     const o = {};
     TXT.forEach(f => { const el = $('#ce-' + f); if (el) o[f] = el.value.trim(); });
