@@ -1441,7 +1441,7 @@ function sessionTable(list, focusDate, showContent) {
 
 /* ---- העתקה מעוצבת: HTML עם סגנון מוטבע, להדבקה בדוקס/ג'ימייל. כך אפשר לעדכן מסמך קיים (והקישור שכבר יצא נשאר חי)
    במקום ליצור קובץ חדש. שורת מפגש צבועה לפי אופן המפגש. ---- */
-const DOC_FONT = "font-family:'Rubik',Arial,sans-serif;";
+const DOC_FONT = "font-family:'Rubik',Arial,sans-serif;text-decoration:none;";
 const DOC_LOGO = 'https://chepti.com/tasks/pub/dreamers-logo.png';
 const MODE_FILL = { online: '#E8F0FE', async: '#FFF1DC', physical: '#E4F5E8', hybrid: '#F0E9FA' };
 const MODE_DOC_LABEL = { online: 'סינכרוני – מקוון', async: 'א-סינכרוני', physical: 'פנים אל פנים', hybrid: 'היברידי' };
@@ -1449,18 +1449,15 @@ const LRM = '‎';
 
 function docHeaderHtml(c, kind, metaExtra) {
   const meta = [c.number ? `מס' השתלמות ${esc(c.number)}` : '', 'מנחה: חפציה בן ארצי', metaExtra].filter(Boolean).join('  ·  ');
+  // בלי טבלת כותרת ובלי קישורים בגוף המסמך: בהדבקה לדוקס הלוגו נחתך והכול נצבע ככחול עם קו תחתון
   return `
-  <table dir="rtl" style="width:100%;border-collapse:collapse"><tbody><tr>
-    <td style="vertical-align:middle;border:none;padding:0 0 4pt 0;${DOC_FONT}">
-      <p style="margin:0;${DOC_FONT}font-size:9pt;font-weight:bold;color:#F5A31A">מסמך למשתלמים</p>
-      <p style="margin:0 0 2pt 0;${DOC_FONT}font-size:20pt;font-weight:bold;color:#1f2430">${kind}</p>
-      <p style="margin:0;${DOC_FONT}font-size:13pt;font-weight:bold;color:#12788A">${esc(c.name)}</p>
-      <p style="margin:3pt 0 0 0;${DOC_FONT}font-size:9pt;color:#5b6475">${meta}</p></td>
-    <td style="width:20%;vertical-align:middle;text-align:left;border:none"><img src="${DOC_LOGO}" width="110" alt="חולמים תקשוב"></td>
-  </tr></tbody></table>
-  <table dir="rtl" style="width:100%;border-collapse:collapse"><tbody><tr><td style="border:none;border-top:2.5pt solid #F5A31A;height:1pt;padding:0"></td></tr></tbody></table>`;
+  <p dir="rtl" style="margin:0 0 6pt 0;text-align:right"><img src="${DOC_LOGO}" width="120" height="79" alt="חולמים תקשוב"></p>
+  <p dir="rtl" style="margin:0;${DOC_FONT}font-size:9pt;font-weight:bold;color:#F5A31A;text-decoration:none">מסמך למשתלמים</p>
+  <p dir="rtl" style="margin:0 0 2pt 0;${DOC_FONT}font-size:20pt;font-weight:bold;color:#1f2430;text-decoration:none">${kind}</p>
+  <p dir="rtl" style="margin:0;${DOC_FONT}font-size:13pt;font-weight:bold;color:#12788A;text-decoration:none">${esc(c.name)}</p>
+  <p dir="rtl" style="margin:3pt 0 8pt 0;${DOC_FONT}font-size:9pt;color:#5b6475;text-decoration:none">${meta}</p>`;
 }
-const DOC_FOOT = `<p style="margin:8pt 0 0 0;${DOC_FONT}font-size:8.5pt;color:#5b6475;text-align:center">חולמים תקשוב  ·  <a href="https://chepti.com">chepti.com</a></p>`;
+const DOC_FOOT = `<p dir="rtl" style="margin:8pt 0 0 0;${DOC_FONT}font-size:8.5pt;color:#5b6475;text-align:center;text-decoration:none">חולמים תקשוב  ·  chepti.com</p>`;
 
 function syllabusDesignHtml(c) {
   const list = courseSessions(c).slice().sort((a, b) => (+a.n || 0) - (+b.n || 0));
@@ -1476,7 +1473,7 @@ function syllabusDesignHtml(c) {
     return `<tr>${cell('width:6%;text-align:center;font-weight:bold;font-size:10.5pt;color:#12788A;', esc(s.n))}
       ${cell('width:24%;font-weight:bold;font-size:9pt;', esc(when))}
       ${cell('width:16%;font-size:9pt;', esc(MODE_DOC_LABEL[s.mode] || '') + (place ? `<br><span style="font-size:8pt;color:#5b6475">${esc(place)}</span>` : ''))}
-      ${cell('font-size:9.5pt;line-height:1.3;', esc(String(s.topic || '').split(' • ')[0]))}</tr>`;
+      ${cell('font-size:9.5pt;line-height:1.3;', esc(String(s.topic || '').split(' • ')[0].split(/\.\s/)[0].replace(/\.$/, '')))}</tr>`;
   }).join('');
   const used = [...new Set(list.map(s => s.mode).filter(Boolean))];
   const legend = used.length ? `<p style="margin:6pt 0 0 0;${DOC_FONT}font-size:8.5pt;color:#5b6475">${used.map(k =>
