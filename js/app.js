@@ -1352,7 +1352,7 @@ function buildWelcome(c) {
   items.push('התחברו לאתר השיתוף "חומר פתוח" https://openstuff.co.il/ בעזרת חשבון הגוגל שלכם. כאן תגישו את התוצרים ותגיבו לתוצרים של המשתתפים האחרים.'
     + (c.group_url ? ` הצטרפו לקבוצה שלנו בפנים, כדי לראות את התוצרים של כולם ולהגיב להם: ${c.group_url}` : ''));
   if (c.whatsapp_url) items.push(`קבוצת הוואטסאפ של ההשתלמות, לעדכונים ושאלות: ${c.whatsapp_url}`);
-  if (c.syllabus_url) items.push(`הסילבוס של הקורס, שכולל גם את פירוט המטלה: ${c.syllabus_url}`);
+  if (c.syllabus_url) items.push(`הסילבוס של ההשתלמות, עם לוח המפגשים: ${c.syllabus_url}`);
   if (c.assignment_url) items.push(`מטלת הסיכום והמחוון של ההשתלמות (כדאי להכיר אותם כבר מההתחלה): ${c.assignment_url}`);
   const L = [];
   if (c.number) L.push(`(מס' השתלמות ${c.number})`, '');
