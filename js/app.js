@@ -1439,6 +1439,86 @@ function sessionTable(list, focusDate, showContent) {
   </table></div>`;
 }
 
+/* ---- העתקה מעוצבת: HTML עם סגנון מוטבע, להדבקה בדוקס/ג'ימייל. כך אפשר לעדכן מסמך קיים (והקישור שכבר יצא נשאר חי)
+   במקום ליצור קובץ חדש. שורת מפגש צבועה לפי אופן המפגש. ---- */
+const DOC_FONT = "font-family:'Rubik',Arial,sans-serif;";
+const DOC_LOGO = 'https://chepti.com/tasks/pub/dreamers-logo.png';
+const MODE_FILL = { online: '#E8F0FE', async: '#FFF1DC', physical: '#E4F5E8', hybrid: '#F0E9FA' };
+const MODE_DOC_LABEL = { online: 'סינכרוני – מקוון', async: 'א-סינכרוני', physical: 'פנים אל פנים', hybrid: 'היברידי' };
+const LRM = '‎';
+
+function docHeaderHtml(c, kind, metaExtra) {
+  const meta = [c.number ? `מס' השתלמות ${esc(c.number)}` : '', 'מנחה: חפציה בן ארצי', metaExtra].filter(Boolean).join('  ·  ');
+  return `
+  <table dir="rtl" style="width:100%;border-collapse:collapse"><tbody><tr>
+    <td style="vertical-align:middle;border:none;padding:0 0 4pt 0;${DOC_FONT}">
+      <p style="margin:0;${DOC_FONT}font-size:9pt;font-weight:bold;color:#F5A31A">מסמך למשתלמים</p>
+      <p style="margin:0 0 2pt 0;${DOC_FONT}font-size:20pt;font-weight:bold;color:#1f2430">${kind}</p>
+      <p style="margin:0;${DOC_FONT}font-size:13pt;font-weight:bold;color:#12788A">${esc(c.name)}</p>
+      <p style="margin:3pt 0 0 0;${DOC_FONT}font-size:9pt;color:#5b6475">${meta}</p></td>
+    <td style="width:20%;vertical-align:middle;text-align:left;border:none"><img src="${DOC_LOGO}" width="110" alt="חולמים תקשוב"></td>
+  </tr></tbody></table>
+  <table dir="rtl" style="width:100%;border-collapse:collapse"><tbody><tr><td style="border:none;border-top:2.5pt solid #F5A31A;height:1pt;padding:0"></td></tr></tbody></table>`;
+}
+const DOC_FOOT = `<p style="margin:8pt 0 0 0;${DOC_FONT}font-size:8.5pt;color:#5b6475;text-align:center">חולמים תקשוב  ·  <a href="https://chepti.com">chepti.com</a></p>`;
+
+function syllabusDesignHtml(c) {
+  const list = courseSessions(c).slice().sort((a, b) => (+a.n || 0) - (+b.n || 0));
+  const th = 'background:#12788A;color:#fff;font-weight:bold;font-size:9.5pt;text-align:center;padding:3pt;border:1.5pt solid #fff;' + DOC_FONT;
+  const rows = list.map(s => {
+    const fill = MODE_FILL[s.mode] || '#F2F8F9';
+    const when = s.date
+      ? `${DAY_SHORT[new Date(s.date + 'T12:00:00').getDay()]}׳ ${LRM}${s.date.split('-').reverse().join('/')}${LRM}${s.from ? ` · ${LRM}${s.from}${s.to ? '–' + s.to : ''}${LRM}` : ''}`
+      : (s.date_text || 'לתיאום') + (s.from ? ` · ${LRM}${s.from}${s.to ? '–' + s.to : ''}${LRM}` : '');
+    const place = (s.mode_text || '').split(/\s*[–·]\s*/).map(p => p.trim())
+      .filter(p => p && !/^(סינכרוני|א-?סינכרוני|אסינכרוני|וירטואלי|מקוון|פנים אל פנים|פא"פ|סדנה|זום)$/.test(p)).join(' · ');
+    const cell = (extra, inner) => `<td dir="rtl" style="background:${fill};vertical-align:middle;padding:3pt 5pt;border:1.5pt solid #fff;${DOC_FONT}${extra}">${inner}</td>`;
+    return `<tr>${cell('width:6%;text-align:center;font-weight:bold;font-size:10.5pt;color:#12788A;', esc(s.n))}
+      ${cell('width:24%;font-weight:bold;font-size:9pt;', esc(when))}
+      ${cell('width:16%;font-size:9pt;', esc(MODE_DOC_LABEL[s.mode] || '') + (place ? `<br><span style="font-size:8pt;color:#5b6475">${esc(place)}</span>` : ''))}
+      ${cell('font-size:9.5pt;line-height:1.3;', esc(String(s.topic || '').split(' • ')[0]))}</tr>`;
+  }).join('');
+  const used = [...new Set(list.map(s => s.mode).filter(Boolean))];
+  const legend = used.length ? `<p style="margin:6pt 0 0 0;${DOC_FONT}font-size:8.5pt;color:#5b6475">${used.map(k =>
+    `<span style="background:${MODE_FILL[k]}">&nbsp;&nbsp;&nbsp;&nbsp;</span> ${MODE_DOC_LABEL[k]}`).join('&nbsp;&nbsp;&nbsp;&nbsp;')}</p>` : '';
+  return `<div dir="rtl" style="${DOC_FONT}">${docHeaderHtml(c, 'סילבוס ההשתלמות', `${list.length} מפגשים`)}
+  <p style="margin:0">&nbsp;</p>
+  <table dir="rtl" style="width:100%;border-collapse:collapse"><tbody>
+    <tr><td style="${th}">מפגש</td><td style="${th}">מועד</td><td style="${th}">אופן</td><td style="${th}">נושא</td></tr>
+    ${rows}</tbody></table>${legend}
+  <p style="margin:8pt 0 0 0;${DOC_FONT}font-size:8.5pt;color:#5b6475;text-align:center">הסילבוס עשוי להתעדכן; הגרסה העדכנית תמיד בקישור זה</p>${DOC_FOOT}</div>`;
+}
+
+function assignmentDesignHtml(c) {
+  const r = courseRubric(c);
+  const lines = String(c.assignment || '').split('\n').map(s => s.trim()).filter(Boolean);
+  const body = lines.map(l => `<p style="margin:0 0 5pt 0;${DOC_FONT}font-size:11pt;line-height:1.5">${esc(l)}</p>`).join('');
+  let table = '';
+  if (r && r.rows) {
+    const H = r.headers, fills = { 'בסיסי': '#FDECEA', 'בינוני': '#FFF6DD', 'מיטבי': '#E6F5EA' };
+    const th = 'background:#12788A;color:#fff;font-weight:bold;font-size:10.5pt;text-align:center;padding:5pt;border:2pt solid #fff;' + DOC_FONT;
+    table = `<table dir="rtl" style="width:100%;border-collapse:collapse"><tbody>
+      <tr>${H.map(h => `<td style="${th}">${esc(h)}</td>`).join('')}</tr>
+      ${r.rows.map(row => `<tr>${row.map((cell, i) => {
+        const bg = fills[H[i]] || '#F2F8F9', w = /^\d+%$/.test(cell);
+        return `<td dir="rtl" style="background:${bg};${DOC_FONT}vertical-align:${w ? 'middle' : 'top'};padding:5pt;border:2pt solid #fff;font-size:${i === 0 ? 10.5 : w ? 12 : 9.5}pt;${i === 0 ? 'font-weight:bold;' : ''}${w ? 'font-weight:bold;text-align:center;color:#12788A;' : ''}">${esc(cell)}</td>`;
+      }).join('')}</tr>`).join('')}</tbody></table>`;
+  } else if (r && r.text) table = `<p style="${DOC_FONT}font-size:10pt">${esc(r.text)}</p>`;
+  const h2 = t => `<p style="margin:16pt 0 6pt 0;${DOC_FONT}font-size:14pt;font-weight:bold;color:#12788A">${t}</p>`;
+  return `<div dir="rtl" style="${DOC_FONT}">${docHeaderHtml(c, 'מטלת סיכום', '')}
+  ${h2('מה צריך להגיש')}${body}${table ? h2('מחוון הערכה') + table : ''}
+  <p style="margin:18pt 0 0 0;${DOC_FONT}font-size:13pt;font-weight:bold;color:#12788A;text-align:center">בהצלחה רבה!</p>${DOC_FOOT}</div>`;
+}
+
+function copyHtml(html, text, msg) {
+  if (navigator.clipboard && window.ClipboardItem) {
+    navigator.clipboard.write([new ClipboardItem({
+      'text/plain': new Blob([text], { type: 'text/plain' }),
+      'text/html': new Blob([html], { type: 'text/html' }),
+    })]).then(() => toast(msg)).catch(() => toast('ההעתקה נחסמה בדפדפן'));
+  } else toast('הדפדפן לא תומך בהעתקה מעוצבת');
+}
+
 function courseSyllabusHtml(c, opts) {
   const st = courseStats(c), list = courseSessions(c);
   const allMine = st.total > 0 && st.mine === st.total;
@@ -1452,6 +1532,7 @@ function courseSyllabusHtml(c, opts) {
       ${c.group_url ? `<button type="button" class="pill-toggle small" data-cm-link="${esc(c.group_url)}" data-msg="קישור הקבוצה בחומר פתוח הועתק" title="העתקת קישור ההצטרפות לקבוצה בחומר פתוח">${ic('users', 13)} חומר פתוח</button>` : ''}
       ${c.whatsapp_url ? `<button type="button" class="pill-toggle small" data-cm-link="${esc(c.whatsapp_url)}" data-msg="קישור קבוצת הווטסאפ הועתק" title="העתקת קישור ההצטרפות לקבוצת הווטסאפ">${ic('messageCircle', 13)} וואטסאפ</button>` : ''}
       ${anyContent ? `<button type="button" class="pill-toggle small ${COURSE_UI.showContent ? 'on' : ''}" id="cm-content" title="להציג גם את תוכן כל מפגש">${ic('listTodo', 13)} תוכן</button>` : ''}
+      <button type="button" class="btn btn-ghost" id="cm-copy-doc" title="סילבוס מעוצב (לוגו, צבע לפי אופן המפגש) — להדבקה בדוקס או במייל">${ic('fileText', 14)} העתקה מעוצבת</button>
       <button type="button" class="btn btn-ghost resp-copy" id="cm-copy" title="כל הסילבוס כטקסט, להדבקה בשיחה עם הבינה">${ic('copy', 14)} העתקה</button>
     </div>
     ${sessionTable(list, opts.focusDate, COURSE_UI.showContent)}
@@ -1469,6 +1550,7 @@ function bindCourseSyllabus(c) {
     if (await saveCourse({ id: c.id, notes: ta.value.trim() })) toast('ההערה נשמרה');
   };
   $('#cm-copy').onclick = () => copyText(courseToText(c), 'הסילבוס הועתק');
+  $('#cm-copy-doc').onclick = () => copyHtml(syllabusDesignHtml(c), courseToText(c), 'הסילבוס המעוצב הועתק — הדביקי בדוקס');
   $$('#modal [data-cm-link]').forEach(b => b.onclick = () => copyText(b.dataset.cmLink, b.dataset.msg));
   const tg = $('#cm-content');
   if (tg) tg.onclick = () => { COURSE_UI.showContent = !COURSE_UI.showContent; openCourse(c.id, 'syl', lastCourseOpts); };
@@ -1492,6 +1574,7 @@ function courseAssignmentHtml(c) {
       <a class="btn btn-ghost" href="${esc(c.assignment_url)}" target="_blank" rel="noopener">${ic('fileText', 15)} פתיחת מסמך המטלה המעוצב</a>
       <button type="button" class="btn btn-ghost" data-cm-link="${esc(c.assignment_url)}" data-msg="קישור מסמך המטלה הועתק">${ic('copy', 15)} העתקת הקישור</button>
     </div>` : ''}
+    ${c.assignment ? `<div class="welcome-actions" style="margin:0 0 14px"><button type="button" class="btn btn-ghost" id="cm-copy-asg-doc" title="מטלה ומחוון מעוצבים — להדבקה בדוקס">${ic('fileText', 15)} העתקה מעוצבת (לדוקס)</button></div>` : ''}
     <div class="doc-block">
       <div class="doc-title">${ic('fileText', 16)} מטלת הסיכום והדרישות
         ${c.assignment ? `<button type="button" class="icon-btn" data-cm-copy="asg" title="העתקת המטלה">${ic('copy', 15)}</button>` : ''}</div>
@@ -1504,6 +1587,8 @@ function courseAssignmentHtml(c) {
     </div>`;
 }
 function bindCourseAssignment(c) {
+  const dz = $('#cm-copy-asg-doc');
+  if (dz) dz.onclick = () => copyHtml(assignmentDesignHtml(c), `${c.assignment}\n\n${rubricToText(courseRubric(c))}`, 'המטלה והמחוון המעוצבים הועתקו — הדביקי בדוקס');
   $$('#modal [data-cm-link]').forEach(b => b.onclick = () => copyText(b.dataset.cmLink, b.dataset.msg));
   $$('#modal [data-cm-copy]').forEach(b => b.onclick = () =>
     copyText(b.dataset.cmCopy === 'asg' ? c.assignment : rubricToText(courseRubric(c)),
