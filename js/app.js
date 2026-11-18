@@ -922,7 +922,7 @@ function trainingDateLabel(t) {
   if (!t.date) return 'בלי תאריך עדיין';
   const d = new Date(t.date + 'T12:00:00');
   let s = `יום ${DAY_NAMES[d.getDay()]} · ${d.getDate()}.${d.getMonth() + 1}`;
-  if (t.time_from) s += ` · ${t.time_from}${t.time_to ? '–' + t.time_to : ''}`;
+  if (t.time_from) s += ` · ‎${t.time_from}${t.time_to ? '–' + t.time_to : ''}‎`;   // סימני כיוון: בלעדיהם טווח שעות מתהפך ב-RTL (21:30–20:00)
   return s;
 }
 
@@ -964,6 +964,8 @@ const TMODE = {
   online:   { label: 'מקוון',    icon: 'monitor', color: 'lilac' },
   hybrid:   { label: 'היברידי',  icon: 'refresh', color: 'teal' },
 };
+// א-סינכרוני קיים רק בפריטי השתלמות (לא כאפשרות בטופס ההדרכה) — צבע כתום וכרטיס מובחן
+const TMODE_ANY = { ...TMODE, async: { label: 'א-סינכרוני', icon: 'clock', color: 'peach' } };
 
 /* בניית קישור "הוספה ליומן גוגל" עם האירוע מוכן מראש */
 function gcalUrl(t) {
@@ -1007,13 +1009,13 @@ function trainingCard(t, { finished = false } = {}) {
   const contact = [t.contact_name, t.contact_role].filter(Boolean).join(' · ');
   const course = courseOf(t);
   return `
-  <div class="card training-card" data-tedit="${t.id}">
+  <div class="card training-card ${t.mode === 'async' ? 'is-async' : ''}" data-tedit="${t.id}">
     <div class="training-head">
       <div style="flex:1;min-width:0">
         <div class="training-topic">${esc(t.topic || t.place || 'הדרכה חדשה')}</div>
         <div class="training-meta">
           ${course ? `<span class="tag t-lilac">${ic('graduationCap', 11)}${esc(course.name)}${course.number ? ` · מס' ${esc(course.number)}` : ''}</span>` : ''}
-          ${t.mode && TMODE[t.mode] ? `<span class="tag t-${TMODE[t.mode].color}">${ic(TMODE[t.mode].icon, 11)}${TMODE[t.mode].label}</span>` : ''}
+          ${t.mode && TMODE_ANY[t.mode] ? `<span class="tag t-${TMODE_ANY[t.mode].color}">${ic(TMODE_ANY[t.mode].icon, 11)}${TMODE_ANY[t.mode].label}</span>` : ''}
           ${t.place ? `<span class="tag t-sky">${ic('mapPin', 11)}${esc(t.place)}</span>` : ''}
           <span class="tag ${t.date ? 't-lilac' : 't-gray'}">${ic('calendar', 11)}${trainingDateLabel(t)}</span>
           ${!finished && t.date ? `<span class="tag t-coral">${ic('clock', 11)}${untilLabel(t.date)}</span>` : ''}
@@ -1049,14 +1051,14 @@ function courseTrainingItems(all) {
   coursesList().forEach(c => {
     const s = courseNextMine(c);
     if (!s) return;
-    if (all.some(t => t.course_id == c.id && t.date === s.date)) return;   // כבר יש הדרכה אמיתית באותו יום
+    // כבר יש הדרכה אמיתית לאותו מפגש: משויכת להשתלמות באותו יום, או (גם בלי שיוך) באותו יום ובאותה שעת התחלה
+    if (all.some(t => t.date === s.date && (t.course_id == c.id || (s.from && t.time_from === s.from)))) return;
     const topic = String(s.topic || '').split(' • ')[0].split(/\.\s/)[0].replace(/\.$/, '');
     out.push({
       id: 'course-' + c.id, _course: true, course_id: c.id, date: s.date,
       time_from: s.from || '', time_to: s.to || '',
-      mode: TMODE[s.mode] ? s.mode : '',
+      mode: TMODE_ANY[s.mode] ? s.mode : '',
       topic: `מפגש ${s.n}${topic ? ': ' + topic : ''}`,
-      message: SMODE[s.mode] && !TMODE[s.mode] ? SMODE[s.mode].label : '',
     });
   });
   return out;
@@ -1096,14 +1098,14 @@ function renderTrainings() {
   const rest = next ? upcoming.slice(1) : upcoming;
 
   const heroHtml = next ? `
-  <div class="training-hero" data-tedit="${next.id}">
+  <div class="training-hero ${next.mode === 'async' ? 'is-async' : ''}" data-tedit="${next.id}">
     <div class="training-hero-top">
       <span class="tag t-coral" style="font-size:.8rem">${ic('clock', 12)}${untilLabel(next.date)}</span>
       ${isTempTraining(next) ? `<span class="tag t-peach">${ic('cloudOff', 11)}ממתין לסנכרון</span>` : ''}
     </div>
     <h2>${esc(next.topic || 'הדרכה')}</h2>
     <div class="training-hero-meta">
-      ${next.mode && TMODE[next.mode] ? `<span>${ic(TMODE[next.mode].icon, 15)} ${TMODE[next.mode].label}</span>` : ''}
+      ${next.mode && TMODE_ANY[next.mode] ? `<span>${ic(TMODE_ANY[next.mode].icon, 15)} ${TMODE_ANY[next.mode].label}</span>` : ''}
       ${next.place ? `<span>${ic('mapPin', 15)} ${esc(next.place)}</span>` : ''}
       <span>${ic('calendar', 15)} ${trainingDateLabel(next)}</span>
       ${next.people_count ? `<span>${ic('user', 15)} ${esc(next.people_count)} משתתפים</span>` : ''}

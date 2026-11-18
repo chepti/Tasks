@@ -1660,3 +1660,7 @@ button.chip:hover { transform: translateY(-1px); border-color: var(--ink-soft); 
 .course-links { display: flex; flex-direction: column; gap: 8px; }
 .course-links .url-row { display: flex; gap: 6px; align-items: center; }
 .course-links .url-row input { flex: 1; min-width: 0; }
+
+/* מפגש א-סינכרוני של השתלמות ברשימת ההדרכות: גוון וסרגל כתום, כדי להבדיל ממפגש חי */
+.training-card.is-async { background: linear-gradient(0deg, rgba(245,163,26,.09), rgba(245,163,26,.09)), var(--card, #fff); border-inline-start: 5px solid #F5A31A; }
+.training-hero.is-async { box-shadow: inset 6px 0 0 #F5A31A, var(--shadow-lg, 0 8px 24px rgba(0,0,0,.08)); }
