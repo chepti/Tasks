@@ -1037,10 +1037,58 @@ function trainingCard(t, { finished = false } = {}) {
   </div>`;
 }
 
+/* השתלמויות ברשימת ההדרכות: כל השתלמות מופיעה לפי המפגש הבא *שבאחריותי* (לא לפי ההדרכה היחידה שקושרה אליה,
+   שאחרי המפגש הראשון נכנסת ל"הסתיימו"). הפריט וירטואלי — לא נשמר, ונפתח כחלון ההשתלמות. */
+function courseNextMine(c) {
+  const today = todayStr();
+  return courseSessions(c).filter(s => sessionIsMine(s) && s.date && s.date >= today)
+    .sort((a, b) => a.date.localeCompare(b.date) || (a.from || '').localeCompare(b.from || ''))[0] || null;
+}
+function courseTrainingItems(all) {
+  const out = [];
+  coursesList().forEach(c => {
+    const s = courseNextMine(c);
+    if (!s) return;
+    if (all.some(t => t.course_id == c.id && t.date === s.date)) return;   // כבר יש הדרכה אמיתית באותו יום
+    const topic = String(s.topic || '').split(' • ')[0].split(/\.\s/)[0].replace(/\.$/, '');
+    out.push({
+      id: 'course-' + c.id, _course: true, course_id: c.id, date: s.date,
+      time_from: s.from || '', time_to: s.to || '',
+      mode: TMODE[s.mode] ? s.mode : '',
+      topic: `מפגש ${s.n}${topic ? ': ' + topic : ''}`,
+      message: SMODE[s.mode] && !TMODE[s.mode] ? SMODE[s.mode].label : '',
+    });
+  });
+  return out;
+}
+function coursesSectionHtml() {
+  const list = coursesList().slice().sort((a, b) => {
+    const na = courseNextMine(a), nb = courseNextMine(b);
+    return (na ? na.date : '9999').localeCompare(nb ? nb.date : '9999') || (courseFirstDate(a) || '').localeCompare(courseFirstDate(b) || '');
+  });
+  if (!list.length) return '';
+  return `
+  <div class="section-title">${ic('graduationCap', 18)} השתלמויות <span class="count">${list.length}</span></div>
+  <div class="course-list">
+    ${list.map(c => {
+      const st = courseStats(c), nx = courseNextMine(c);
+      return `
+      <button type="button" class="course-row" data-open-course="${c.id}">
+        <span class="course-row-title">${esc(c.name)}</span>
+        <span class="course-row-meta">
+          ${c.number ? `<span class="tag t-gray">מס' ${esc(c.number)}</span>` : ''}
+          <span class="tag ${nx ? 't-coral' : 't-gray'}">${ic('calendar', 11)}${nx ? `מפגש ${nx.n} · ${shortDate(nx.date)} · ${untilLabel(nx.date)}` : 'אין מפגשים באחריותי בהמשך'}</span>
+          <span class="tag ${st.mine === st.total ? 't-teal' : 't-rose'}">${ic('users', 11)}${st.mine === st.total ? `${st.total} מפגשים` : `שלי ${st.mine} מתוך ${st.total}`}</span>
+        </span>
+      </button>`;
+    }).join('')}
+  </div>`;
+}
+
 function renderTrainings() {
   const today = todayStr();
   const all = trainingsList();
-  const upcoming = all.filter(t => !t.date || t.date >= today)
+  const upcoming = [...all.filter(t => !t.date || t.date >= today), ...courseTrainingItems(all)]
     .sort((a, b) => (a.date || '9999').localeCompare(b.date || '9999'));
   const finished = all.filter(t => t.date && t.date < today)
     .sort((a, b) => b.date.localeCompare(a.date));
@@ -1067,7 +1115,7 @@ function renderTrainings() {
       ${next.slides_url ? `<button class="btn btn-ghost hero-btn" data-copy="${esc(next.slides_url)}">${ic('monitor', 15)} העתקת מצגת</button>` : ''}
       ${next.recording_url ? `<button class="btn btn-ghost hero-btn" data-copy="${esc(next.recording_url)}">${ic('mic', 15)} העתקת הקלטה</button>` : ''}
       ${gcalUrl(next) ? `<a class="btn btn-ghost hero-btn" href="${gcalUrl(next)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${ic('calendar', 15)} הוספה ליומן גוגל</a>` : ''}
-      <button class="btn btn-ghost hero-btn" data-copytraining="${next.id}" title="כל הפרטים כטקסט מסודר">${ic('copy', 15)} העתקת הכל</button>
+      ${next._course ? '' : `<button class="btn btn-ghost hero-btn" data-copytraining="${next.id}" title="כל הפרטים כטקסט מסודר">${ic('copy', 15)} העתקת הכל</button>`}
     </div>
     ${courseOf(next) ? `
     <div class="training-hero-actions hero-course">
@@ -1096,7 +1144,8 @@ function renderTrainings() {
       ${finished.some(t => t.pay_received != 1 && t.pay_amount) ? `<span class="tag t-peach">${ic('banknote', 11)}יש תשלומים פתוחים</span>` : ''}
     </button>
     ${SHOW_FINISHED_TRAININGS ? `<div class="task-list">${finished.map(t => trainingCard(t, { finished: true })).join('')}</div>` : ''}
-  ` : ''}`;
+  ` : ''}
+  ${coursesSectionHtml()}`;
 }
 
 async function saveTraining(payload, { quiet = false } = {}) {
@@ -3078,8 +3127,14 @@ function bindMain() {
   // הדרכות
   $$('[data-tedit]').forEach(el => el.onclick = e => {
     if (e.target.closest('[data-copy],[data-copytraining],[data-course-open],[data-pay],[data-fu],a')) return;
+    if (String(el.dataset.tedit).startsWith('course-')) {   // פריט השתלמות וירטואלי ← חלון ההשתלמות
+      const cid = +String(el.dataset.tedit).slice(7), s = courseNextMine(courseById(cid) || {});
+      openCourse(cid, 'syl', { focusDate: s ? s.date : '' });
+      return;
+    }
     openTrainingSheet(el.dataset.tedit);
   });
+  $$('[data-open-course]').forEach(b => b.onclick = () => openCourse(+b.dataset.openCourse));
   $$('[data-course-open]').forEach(b => b.onclick = e => {
     e.stopPropagation();
     openCourse(+b.dataset.course, b.dataset.courseOpen, { focusDate: b.dataset.cdate || '' });
