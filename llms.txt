@@ -32,6 +32,7 @@
   שדות: `name, number (מס' השתלמות), summary, sessions, assignment, rubric, syllabus_url, meet_url, classroom_url, group_url, welcome, notes, status`.
   `sessions` = מערך אמיתי של `{n, date, date_text, from, to, hours, mode: online|physical|async|hybrid, mode_text, topic, content, product, facilitator, mine}`.
   `mine:false` = מפגש שאינו באחריותה (מנחה אחר) — מוצג מעומעם. `rubric` = `{"headers":[...],"rows":[[...]]}` או טקסט.
+  מידע כללי על ההשתלמות כולה (פעם אחת, לא בכל מפגש): `audience, equipment, people_count, place, contact_name, contact_role, contact_phone, contact_email`. שדות נוספים בכל מפגש בתוך `sessions`: `prep` (הערות הכנה), `status` (""|working|ready), `slides_url`.
 - `POST ?action=course_delete` — `{"id":N}` או `{"match":"..."}`; הדרכות מקושרות נשארות עצמאיות.
 - `POST ?action=setting_set` — `{"key":"welcome_signature","value":"..."}` חתימת מייל ברוכים הבאים.
 - הרשימה המלאה עם המפגשים ב-`?action=all` תחת `courses`.

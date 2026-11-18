@@ -32,6 +32,8 @@ function ic(name, size = 20) {
     download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/>',
     logout: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/>',
     chevronDown: '<path d="m6 9 6 6 6-6"/>',
+    chevronRight: '<path d="m9 18 6-6-6-6"/>',
+    chevronLeft: '<path d="m15 18-6-6 6-6"/>',
     clipboard: '<rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M9 12h6"/><path d="M9 16h6"/>',
     settings: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
     partyPopper: '<path d="M5.8 11.3 2 22l10.7-3.79"/><path d="M4 3h.01"/><path d="M22 8h.01"/><path d="M15 2h.01"/><path d="M22 20h.01"/><path d="m22 2-2.24.75a2.9 2.9 0 0 0-1.96 3.12c.1.86-.57 1.63-1.45 1.63h-.38c-.86 0-1.6.6-1.76 1.44L14 10"/><path d="m22 13-.82-.33c-.86-.34-1.82.2-1.98 1.11c-.11.7-.72 1.22-1.43 1.22H17"/><path d="m11 2 .33.82c.34.86-.2 1.82-1.11 1.98C9.52 4.9 9 5.52 9 6.23V7"/><path d="M11 13c1.93 1.93 2.83 4.17 2 5-.83.83-3.07-.07-5-2-1.93-1.93-2.83-4.17-2-5 .83-.83 3.07.07 5 2Z"/>',
@@ -1051,8 +1053,8 @@ function courseTrainingItems(all) {
   coursesList().forEach(c => {
     const s = courseNextMine(c);
     if (!s) return;
-    // כבר יש הדרכה אמיתית לאותו מפגש: משויכת להשתלמות באותו יום, או (גם בלי שיוך) באותו יום ובאותה שעת התחלה
-    if (all.some(t => t.date === s.date && (t.course_id == c.id || (s.from && t.time_from === s.from)))) return;
+    // הדרכה אמיתית *לא משויכת* באותו יום ובאותה שעת התחלה — כנראה אותו מפגש, לא מציגים פעמיים
+    if (all.some(t => !t.course_id && t.date === s.date && s.from && t.time_from === s.from)) return;
     const topic = String(s.topic || '').split(' • ')[0].split(/\.\s/)[0].replace(/\.$/, '');
     out.push({
       id: 'course-' + c.id, _course: true, course_id: c.id, date: s.date,
@@ -1063,29 +1065,130 @@ function courseTrainingItems(all) {
   });
   return out;
 }
-/* לחיצה על השתלמות / מפגש שלה ← גיליון ההדרכה (שם כל מה שנדרש להכנה: קהל, רעיונות, כלים, ציוד, איש קשר).
-   אם עוד אין הדרכה למפגש הזה — נפתחת הדרכה חדשה מוכנה: התאריך, השעה והאופן מהסילבוס, ושאר הפרטים
-   (קהל, איש קשר, ציוד, מקום) מועתקים מההדרכה האחרונה של אותה השתלמות. לא נשמרת עד שלוחצים שמירה. */
+/* ---- גיליון מפגש של השתלמות: מידע כללי על ההשתלמות (פעם אחת) + מה שמשתנה בכל מפגש ----
+   נשמר בהשתלמות עצמה: שדות כלליים בעמודות שלה, ושדות המפגש בתוך sessions[]. */
+const SSTATUS = { '': { label: 'עוד לא התחלתי', color: 'gray' }, working: { label: 'בהכנה', color: 'peach' }, ready: { label: 'מוכן', color: 'teal' } };
+const GENERAL_FIELDS = [
+  ['audience', 'מאפייני הקהל וידע קודם', 'smile', 'area'], ['equipment', 'ציוד נדרש למשתלמים', 'laptop', 'area'],
+  ['people_count', 'כמה משתתפים', 'user'], ['place', 'מקום / פלטפורמה', 'mapPin'],
+  ['contact_name', 'איש קשר', 'user'], ['contact_role', 'תפקיד', 'star'],
+  ['contact_phone', 'טלפון', 'phone'], ['contact_email', 'מייל', 'mail'],
+];
+let SESSION_EDIT = null;
+function openSessionSheet(cid, n) {
+  const c = courseById(cid);
+  if (!c) return;
+  const all = courseSessions(c).slice().sort((a, b) => (+a.n || 0) - (+b.n || 0));
+  const s = all.find(x => x.n == n);
+  if (!s) { openCourse(cid); return; }
+  const idx = all.indexOf(s), prev = all[idx - 1], next = all[idx + 1];
+  const md = SMODE[s.mode];
+  const legacy = trainingsList().find(t => t.course_id == cid && t.date && t.date === s.date);
+  const v = o => esc(o || '');
+  const input = (id, label, icon, val, extra = '') => `<label class="cell"><span class="cell-label">${ic(icon, 12)} ${label}</span><input type="text" id="${id}" value="${v(val)}" ${extra}></label>`;
+  const area = (id, label, icon, val, rows = 2, ph = '') => `<label class="cell full"><span class="cell-label">${ic(icon, 12)} ${label}</span><textarea id="${id}" rows="${rows}" placeholder="${esc(ph)}">${v(val)}</textarea></label>`;
+  const divider = (icon, label) => `<div class="sheet-divider"><span>${ic(icon, 14)} ${label}</span></div>`;
+  const link = (u, icon, label, copy) => u ? (copy
+    ? `<button type="button" class="pill-toggle small" data-sslink="${esc(u)}" title="העתקת הקישור">${ic(icon, 13)} ${label}</button>`
+    : `<a class="pill-toggle small" href="${esc(u)}" target="_blank" rel="noopener">${ic(icon, 13)} ${label}</a>`) : '';
+  let status = s.status || '';
+
+  openModal(`
+    <div class="course-head">
+      <div class="course-head-main">
+        <div class="course-title">${esc(c.name)}</div>
+        ${c.number ? `<span class="tag t-gray">מס׳ השתלמות ${esc(c.number)}</span>` : ''}
+      </div>
+      <button class="corner-btn" id="ss-course" title="חלון ההשתלמות המלא (סילבוס, מטלה, ברוכים הבאים)">${ic('graduationCap', 16)}</button>
+      <button class="corner-btn" id="ss-close" title="סגירה">${ic('x', 18)}</button>
+    </div>
+    <div class="ss-nav">
+      <button type="button" class="pill-toggle small" id="ss-prev" ${prev ? '' : 'disabled'} title="המפגש הקודם">${ic('chevronRight', 13)} ${prev ? 'מפגש ' + prev.n : ''}</button>
+      <div class="ss-when"><b>מפגש ${esc(s.n)}</b> · ${esc(sessionWhen(s))}
+        ${md ? `<span class="tag t-${md.color}">${ic(md.icon, 11)}${md.label}</span>` : ''}${s.hours ? `<span class="tag t-gray">${esc(s.hours)} שע׳ אק׳</span>` : ''}
+        ${sessionIsMine(s) ? '' : `<span class="tag t-rose">לא באחריותי${s.facilitator ? ' · ' + esc(s.facilitator) : ''}</span>`}</div>
+      <button type="button" class="pill-toggle small" id="ss-next" ${next ? '' : 'disabled'} title="המפגש הבא">${next ? 'מפגש ' + next.n : ''} ${ic('chevronLeft', 13)}</button>
+    </div>
+    <div class="ss-links">
+      ${link(c.classroom_url, 'graduationCap', 'קלאסרום')}${link(c.meet_url, 'monitor', 'קישור למפגש')}
+      ${link(c.syllabus_url, 'fileText', 'סילבוס')}${link(c.assignment_url, 'listTodo', 'מטלת סיכום')}
+      ${link(c.group_url, 'users', 'חומר פתוח', true)}${link(c.whatsapp_url, 'messageCircle', 'וואטסאפ', true)}
+      ${legacy ? `<button type="button" class="pill-toggle small" id="ss-legacy" title="ההדרכה הישנה שנוצרה למפגש הזה">${ic('presentation', 13)} טופס הדרכה מלא</button>` : ''}
+    </div>
+    <div class="ss-cols">
+      <div class="ss-col">
+        ${divider('calendar', 'המפגש הזה')}
+        ${input('ss-topic', 'נושא', 'sparkles', s.topic)}
+        ${area('ss-content', 'תוכן המפגש (מהסילבוס)', 'listTodo', s.content, 2)}
+        ${area('ss-product', 'תוצר להגשה', 'check', s.product, 2)}
+        ${area('ss-prep', 'הערות הכנה', 'pencil', s.prep, 5, 'רעיונות, פעילויות, מה לזכור להביא או לבדוק…')}
+        <label class="cell full"><span class="cell-label">${ic('monitor', 12)} מצגת המפגש</span>
+          <div class="url-row"><input type="url" id="ss-slides_url" value="${v(s.slides_url)}" placeholder="https://..." dir="ltr">
+            <button type="button" class="icon-btn" data-copyfield="ss-slides_url" title="העתקה">${ic('copy', 15)}</button></div></label>
+        <div class="cell full"><span class="cell-label">${ic('check', 12)} מצב ההכנה</span>
+          <div class="seg" id="ss-status">${Object.entries(SSTATUS).map(([k, x]) => `<button type="button" class="seg-btn c-${x.color} ${status === k ? 'on' : ''}" data-sstatus="${k}">${x.label}</button>`).join('')}</div></div>
+      </div>
+      <div class="ss-col">
+        ${divider('graduationCap', 'על ההשתלמות כולה')}
+        ${GENERAL_FIELDS.map(([f, label, icon, kind]) => kind === 'area' ? area('ss-g-' + f, label, icon, c[f], 3) : input('ss-g-' + f, label, icon, c[f], f === 'contact_phone' ? 'type="tel"' : '')).join('')}
+        <p class="ss-hint">נשמר פעם אחת בהשתלמות ומופיע בכל המפגשים שלה.</p>
+      </div>
+    </div>
+    <div class="sheet-actions">
+      <button class="btn btn-ghost" id="ss-cancel">סגירה</button>
+      <button class="btn btn-primary" id="ss-save">שמירה</button>
+    </div>`);
+  $('#modal').classList.add('modal-wide');
+
+  const collect = () => {
+    const o = { sess: { topic: $('#ss-topic').value.trim(), content: $('#ss-content').value.trim(), product: $('#ss-product').value.trim(),
+      prep: $('#ss-prep').value.trim(), slides_url: $('#ss-slides_url').value.trim(), status }, gen: {} };
+    GENERAL_FIELDS.forEach(([f]) => { o.gen[f] = $('#ss-g-' + f).value.trim(); });
+    return o;
+  };
+  SESSION_EDIT = { base: JSON.stringify(collect()), armed: false };
+  const dirty = () => !!SESSION_EDIT && JSON.stringify(collect()) !== SESSION_EDIT.base;
+  // יציאה עם שינויים שלא נשמרו דורשת לחיצה שנייה (תוך 4 שניות) — כדי שלא יאבד תוכן בטעות
+  const guard = fn => () => {
+    if (!dirty()) { SESSION_EDIT = null; fn(); return; }
+    if (SESSION_EDIT.armed) { SESSION_EDIT = null; fn(); return; }
+    SESSION_EDIT.armed = true;
+    toast('יש שינויים שלא נשמרו — שמירה, או לחצי שוב כדי לצאת בלי לשמור');
+    setTimeout(() => { if (SESSION_EDIT) SESSION_EDIT.armed = false; }, 4000);
+  };
+  $('#ss-close').onclick = guard(closeModal);
+  $('#ss-cancel').onclick = guard(closeModal);
+  $('#ss-course').onclick = guard(() => openCourse(cid, 'syl', { focusDate: s.date }));
+  $('#modal-backdrop').onclick = e => { if (e.target === $('#modal-backdrop')) guard(closeModal)(); };
+  if (prev) $('#ss-prev').onclick = guard(() => openSessionSheet(cid, prev.n));
+  if (next) $('#ss-next').onclick = guard(() => openSessionSheet(cid, next.n));
+  if (legacy) $('#ss-legacy').onclick = guard(() => { closeModal(); openTrainingSheet(legacy.id); });
+  $$('#modal [data-sslink]').forEach(b => b.onclick = () => copyText(b.dataset.sslink, 'הקישור הועתק'));
+  $$('#modal [data-copyfield]').forEach(b => b.onclick = () => { const el = $('#' + b.dataset.copyfield); if (el && el.value) copyText(el.value, 'הועתק'); });
+  $$('#ss-status [data-sstatus]').forEach(b => b.onclick = () => {
+    status = b.dataset.sstatus;
+    $$('#ss-status [data-sstatus]').forEach(x => x.classList.toggle('on', x === b));
+  });
+  $('#ss-save').onclick = async () => {
+    const d = collect(), fresh = courseById(cid) || c;
+    const sessions = courseSessions(fresh).map(x => x.n == n ? { ...x, ...d.sess } : x);
+    const saved = await saveCourse({ id: cid, sessions, ...d.gen });
+    if (!saved) return;
+    SESSION_EDIT = null; render(); toast('נשמר');
+    openSessionSheet(cid, n);
+  };
+}
+
+/* לחיצה על השתלמות / מפגש שלה ← גיליון המפגש: מידע כללי על ההשתלמות (נשמר פעם אחת) + מה שמשתנה במפגש
+   (נושא, תוכן, תוצר, הערות הכנה, מצגת, מצב הכנה). */
 function openCourseSession(cid) {
   const c = courseById(cid);
   if (!c) return;
   const s = courseNextMine(c);
-  const linked = trainingsList().filter(t => t.course_id == cid).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
-  if (!s) {   // אין מפגש קרוב שלי: ההדרכה האחרונה של ההשתלמות, ואם אין — חלון ההשתלמות
-    if (linked.length) openTrainingSheet(linked[0].id); else openCourse(cid);
-    return;
-  }
-  const same = linked.find(t => t.date === s.date);
-  if (same) { openTrainingSheet(same.id); return; }
-  const base = linked[0] || {};
-  const topic = String(s.topic || '').split(' • ')[0].split(/\.\s/)[0].replace(/\.$/, '');
-  const pre = { course_id: cid, date: s.date, time_from: s.from || '', time_to: s.to || '', mode: TMODE[s.mode] ? s.mode : '',
-    topic: `${base.topic || c.name} – מפגש ${s.n}`,
-    ideas: [`בסילבוס — מפגש ${s.n}: ${topic}`, s.content ? `תוכן: ${s.content}` : '', s.product ? `תוצר: ${s.product}` : '',
-            s.mode === 'async' ? '(יחידה א-סינכרונית)' : ''].filter(Boolean).join('\n') };
-  ['audience', 'people_count', 'style', 'equipment', 'place', 'contact_name', 'contact_role', 'contact_phone', 'contact_email']
-    .forEach(f => { if (base[f]) pre[f] = base[f]; });
-  openTrainingSheet(null, pre);
+  if (s) { openSessionSheet(cid, s.n); return; }
+  // אין מפגש קרוב שלי: המפגש האחרון שלי (לעיון), ואם אין — חלון ההשתלמות
+  const mine = courseSessions(c).filter(sessionIsMine).sort((a, b) => (+b.n || 0) - (+a.n || 0))[0];
+  if (mine) openSessionSheet(cid, mine.n); else openCourse(cid);
 }
 
 function coursesSectionHtml() {
@@ -1115,7 +1218,8 @@ function coursesSectionHtml() {
 function renderTrainings() {
   const today = todayStr();
   const all = trainingsList();
-  const upcoming = [...all.filter(t => !t.date || t.date >= today), ...courseTrainingItems(all)]
+  const coversSession = t => { const c = t.course_id ? courseById(t.course_id) : null; return !!(c && t.date && courseSessions(c).some(x => x.date === t.date)); };
+  const upcoming = [...all.filter(t => (!t.date || t.date >= today) && !coversSession(t)), ...courseTrainingItems(all)]
     .sort((a, b) => (a.date || '9999').localeCompare(b.date || '9999'));
   const finished = all.filter(t => t.date && t.date < today)
     .sort((a, b) => b.date.localeCompare(a.date));
@@ -1497,7 +1601,7 @@ function sessionRow(s, focusDate, showContent) {
   const MODE_WORDS = /^(סינכרוני|א-?סינכרוני|אסינכרוני|וירטואלי|מקוון|פנים אל פנים|פא"פ|סדנה|זום)$/;
   const place = (s.mode_text || '').split(/\s*[–·]\s*/).map(p => p.trim()).filter(p => p && !MODE_WORDS.test(p)).join(' · ');
   return `
-  <tr class="${mine ? '' : 'not-mine'} ${past ? 'past' : ''} ${focus ? 'focus' : ''}">
+  <tr class="${mine ? '' : 'not-mine'} ${past ? 'past' : ''} ${focus ? 'focus' : ''}" data-sess="${esc(s.n)}" title="פתיחת גיליון המפגש">
     <td class="st-n">${esc(s.n)}</td>
     <td class="st-when">${day}${time ? `<span class="st-time">${esc(time)}</span>` : ''}</td>
     <td class="st-mode">${md ? `<span class="st-mode-tag m-${md.color}">${ic(md.icon, 11)}${SMODE_SHORT[s.mode]}</span>` : ''}${s.hours ? `<span class="st-hours">${esc(s.hours)} שע׳</span>` : ''}</td>
@@ -1651,6 +1755,7 @@ function bindCourseSyllabus(c) {
   $$('#modal [data-cm-link]').forEach(b => b.onclick = () => copyText(b.dataset.cmLink, b.dataset.msg));
   const tg = $('#cm-content');
   if (tg) tg.onclick = () => { COURSE_UI.showContent = !COURSE_UI.showContent; openCourse(c.id, 'syl', lastCourseOpts); };
+  $$('#modal tr[data-sess]').forEach(tr => tr.onclick = () => openSessionSheet(c.id, tr.dataset.sess));
   const f = $('#modal tr.focus');
   if (f) f.scrollIntoView({ block: 'center' });
 }
@@ -1828,6 +1933,17 @@ function openCourseEditor(id) {
         ${cell('group_url', 'קבוצה בחומר פתוח', 'users', '', true)}
         ${cell('whatsapp_url', 'קבוצת וואטסאפ', 'messageCircle', '', true)}
       </div>
+      ${divider('smile', 'מידע כללי על ההשתלמות')}
+      ${area('audience', 'מאפייני הקהל וידע קודם', 'smile', '', 2)}
+      ${area('equipment', 'ציוד נדרש למשתלמים', 'laptop', '', 2)}
+      <div class="tgrid c2">
+        ${cell('people_count', 'כמה משתתפים', 'user')}
+        ${cell('place', 'מקום / פלטפורמה', 'mapPin')}
+        ${cell('contact_name', 'איש קשר', 'user')}
+        ${cell('contact_role', 'תפקיד', 'star')}
+        ${cell('contact_phone', 'טלפון', 'phone')}
+        ${cell('contact_email', 'מייל', 'mail', '', true)}
+      </div>
       ${divider('calendar', 'מפגשים')}
       <div id="ce-sess" class="ce-sess"></div>
       <button type="button" class="btn btn-ghost" id="ce-addsess">${ic('plus', 15)} מפגש</button>
@@ -1896,7 +2012,8 @@ function openCourseEditor(id) {
     const last = $('#ce-sess [data-si]:last-child [data-f="topic"]'); if (last) last.focus();
   };
 
-  const TXT = ['name', 'number', 'summary', 'syllabus_url', 'meet_url', 'classroom_url', 'group_url', 'whatsapp_url', 'assignment_url', 'assignment', 'rubric', 'notes'];
+  const TXT = ['name', 'number', 'summary', 'syllabus_url', 'meet_url', 'classroom_url', 'group_url', 'whatsapp_url', 'assignment_url', 'assignment', 'rubric', 'notes',
+    'audience', 'equipment', 'people_count', 'place', 'contact_name', 'contact_role', 'contact_phone', 'contact_email'];
   const collect = () => {
     const o = {};
     TXT.forEach(f => { const el = $('#ce-' + f); if (el) o[f] = el.value.trim(); });

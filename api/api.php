@@ -46,7 +46,8 @@ const TRAINING_FIELDS = ['client_id','topic','place','mode','date','time_from','
 // השתלמות (פתרון למידה) — ישות משותפת שהדרכות מצביעות עליה דרך course_id.
 // sessions ו-rubric נשמרים כ-JSON; ראו course_fields ב-help.
 const COURSE_FIELDS = ['client_id','name','number','summary','sessions','assignment','rubric',
-    'syllabus_url','assignment_url','meet_url','classroom_url','group_url','whatsapp_url','welcome','notes','status'];
+    'syllabus_url','assignment_url','meet_url','classroom_url','group_url','whatsapp_url','welcome','notes','status',
+    'audience','equipment','people_count','place','contact_name','contact_role','contact_phone','contact_email'];
 const COURSE_JSON_FIELDS = ['sessions','rubric'];
 // הגדרות כלליות שמותר לכתוב דרך setting_set (לא סודות — אלה נשארים ב-config.php)
 const SETTING_KEYS = ['welcome_signature'];
@@ -135,6 +136,9 @@ function helpDoc() {
             'assignment_url' => 'link to the designed summary-assignment + rubric document (Drive); included in the welcome email',
             'whatsapp_url' => 'invite link (chat.whatsapp.com/...) of the companion WhatsApp group; shown as a copy button in the syllabus window (not part of the welcome email)',
             'welcome' => 'saved text of the welcome email. Empty = the app builds it from the fields above plus the global welcome_signature setting.',
+            'audience / equipment / people_count / place' => 'general info about the whole course (stored once, not per session): audience traits and prior knowledge, equipment teachers need, expected attendance, place/platform',
+            'contact_name / contact_role / contact_phone / contact_email' => 'the course contact person',
+            'sessions[].prep / sessions[].status / sessions[].slides_url' => 'per-session prep notes (free text), prep status ""|working|ready, and a link to the slides of that session',
             'status' => 'active | done | archived',
             'client_id' => 'optional client-generated id for idempotent sync',
         ],
@@ -392,6 +396,10 @@ $db->exec("CREATE TABLE IF NOT EXISTS courses (
 try { $db->exec("ALTER TABLE courses ADD COLUMN whatsapp_url TEXT DEFAULT ''"); } catch (Throwable $e) { /* exists */ }
 // קישור למסמך מטלת הסיכום והמחוון (בדרייב) — נכנס למייל ברוכים הבאים
 try { $db->exec("ALTER TABLE courses ADD COLUMN assignment_url TEXT DEFAULT ''"); } catch (Throwable $e) { /* exists */ }
+// מידע כללי על ההשתלמות כולה (במקום לשכפל אותו בכל הדרכה/מפגש)
+foreach (['audience','equipment','people_count','place','contact_name','contact_role','contact_phone','contact_email'] as $col) {
+    try { $db->exec("ALTER TABLE courses ADD COLUMN $col TEXT DEFAULT ''"); } catch (Throwable $e) { /* exists */ }
+}
 
 // רעיונות לאפליקציות: כל אפליקציה היא מיכל, ובתוכה רשימה מסודרת אחת של פריטים.
 // היררכיה קלה מושגת ע"י פריט מסוג heading שמשמש ככותרת קטנה בתוך הרשימה —

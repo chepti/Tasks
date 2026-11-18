@@ -1664,3 +1664,18 @@ button.chip:hover { transform: translateY(-1px); border-color: var(--ink-soft); 
 /* מפגש א-סינכרוני של השתלמות ברשימת ההדרכות: גוון וסרגל כתום, כדי להבדיל ממפגש חי */
 .training-card.is-async { background: linear-gradient(0deg, rgba(245,163,26,.09), rgba(245,163,26,.09)), var(--card, #fff); border-inline-start: 5px solid #F5A31A; }
 .training-hero.is-async { box-shadow: inset 6px 0 0 #F5A31A, var(--shadow-lg, 0 8px 24px rgba(0,0,0,.08)); }
+
+/* גיליון מפגש של השתלמות */
+.seg-btn.on.c-peach { background: #FFC58A; }
+.seg-btn.on.c-gray  { background: #DCD9E6; }
+.ss-nav { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 4px 0 10px; }
+.ss-when { flex: 1; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px; font-size: .95rem; }
+.ss-nav .pill-toggle[disabled] { opacity: .3; pointer-events: none; }
+.ss-links { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.ss-links a.pill-toggle { text-decoration: none; }
+.ss-cols { display: flex; flex-direction: column; gap: 4px; }
+.ss-col { display: flex; flex-direction: column; gap: 8px; }
+.ss-hint { margin: 0; font-size: .78rem; color: var(--ink-soft, #7a7790); }
+@media (min-width: 800px) { .ss-cols { flex-direction: row; gap: 22px; } .ss-col { flex: 1; min-width: 0; } }
+tr[data-sess] { cursor: pointer; }
+tr[data-sess]:hover td { background: rgba(122,108,255,.06); }
