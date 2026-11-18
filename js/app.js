@@ -1063,6 +1063,31 @@ function courseTrainingItems(all) {
   });
   return out;
 }
+/* לחיצה על השתלמות / מפגש שלה ← גיליון ההדרכה (שם כל מה שנדרש להכנה: קהל, רעיונות, כלים, ציוד, איש קשר).
+   אם עוד אין הדרכה למפגש הזה — נפתחת הדרכה חדשה מוכנה: התאריך, השעה והאופן מהסילבוס, ושאר הפרטים
+   (קהל, איש קשר, ציוד, מקום) מועתקים מההדרכה האחרונה של אותה השתלמות. לא נשמרת עד שלוחצים שמירה. */
+function openCourseSession(cid) {
+  const c = courseById(cid);
+  if (!c) return;
+  const s = courseNextMine(c);
+  const linked = trainingsList().filter(t => t.course_id == cid).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  if (!s) {   // אין מפגש קרוב שלי: ההדרכה האחרונה של ההשתלמות, ואם אין — חלון ההשתלמות
+    if (linked.length) openTrainingSheet(linked[0].id); else openCourse(cid);
+    return;
+  }
+  const same = linked.find(t => t.date === s.date);
+  if (same) { openTrainingSheet(same.id); return; }
+  const base = linked[0] || {};
+  const topic = String(s.topic || '').split(' • ')[0].split(/\.\s/)[0].replace(/\.$/, '');
+  const pre = { course_id: cid, date: s.date, time_from: s.from || '', time_to: s.to || '', mode: TMODE[s.mode] ? s.mode : '',
+    topic: `${base.topic || c.name} – מפגש ${s.n}`,
+    ideas: [`בסילבוס — מפגש ${s.n}: ${topic}`, s.content ? `תוכן: ${s.content}` : '', s.product ? `תוצר: ${s.product}` : '',
+            s.mode === 'async' ? '(יחידה א-סינכרונית)' : ''].filter(Boolean).join('\n') };
+  ['audience', 'people_count', 'style', 'equipment', 'place', 'contact_name', 'contact_role', 'contact_phone', 'contact_email']
+    .forEach(f => { if (base[f]) pre[f] = base[f]; });
+  openTrainingSheet(null, pre);
+}
+
 function coursesSectionHtml() {
   const list = coursesList().slice().sort((a, b) => {
     const na = courseNextMine(a), nb = courseNextMine(b);
@@ -1961,10 +1986,10 @@ function courseButtons(c, { cls = 'pill-toggle small', date = '' } = {}) {
 }
 
 /* ---------- גיליון עריכת הדרכה ---------- */
-function openTrainingSheet(id) {
+function openTrainingSheet(id, prefill) {
   const t = id != null
     ? { ...trainingsList().find(x => x.id == id) }
-    : { client_id: 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7) };
+    : { client_id: 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), ...(prefill || {}) };
   const v = f => esc(t[f] || '');
 
   // תא קומפקטי: תווית זעירה למעלה, שדה מתחת.
@@ -3129,14 +3154,10 @@ function bindMain() {
   // הדרכות
   $$('[data-tedit]').forEach(el => el.onclick = e => {
     if (e.target.closest('[data-copy],[data-copytraining],[data-course-open],[data-pay],[data-fu],a')) return;
-    if (String(el.dataset.tedit).startsWith('course-')) {   // פריט השתלמות וירטואלי ← חלון ההשתלמות
-      const cid = +String(el.dataset.tedit).slice(7), s = courseNextMine(courseById(cid) || {});
-      openCourse(cid, 'syl', { focusDate: s ? s.date : '' });
-      return;
-    }
+    if (String(el.dataset.tedit).startsWith('course-')) { openCourseSession(+String(el.dataset.tedit).slice(7)); return; }
     openTrainingSheet(el.dataset.tedit);
   });
-  $$('[data-open-course]').forEach(b => b.onclick = () => openCourse(+b.dataset.openCourse));
+  $$('[data-open-course]').forEach(b => b.onclick = () => openCourseSession(+b.dataset.openCourse));
   $$('[data-course-open]').forEach(b => b.onclick = e => {
     e.stopPropagation();
     openCourse(+b.dataset.course, b.dataset.courseOpen, { focusDate: b.dataset.cdate || '' });
