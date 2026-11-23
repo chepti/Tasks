@@ -1679,3 +1679,6 @@ button.chip:hover { transform: translateY(-1px); border-color: var(--ink-soft); 
 @media (min-width: 800px) { .ss-cols { flex-direction: row; gap: 22px; } .ss-col { flex: 1; min-width: 0; } }
 tr[data-sess] { cursor: pointer; }
 tr[data-sess]:hover td { background: rgba(122,108,255,.06); }
+
+/* קישור הדיאטה בניווט (עוגן, לא כפתור) */
+a.nav-item { text-decoration: none; }

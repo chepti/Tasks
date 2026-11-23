@@ -32,6 +32,7 @@ function ic(name, size = 20) {
     download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/>',
     logout: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/>',
     chevronDown: '<path d="m6 9 6 6 6-6"/>',
+    apple: '<path d="M12 20.94c1.5 0 2.75 1.06 4 1.06 3 0 6-8 6-12.22A4.91 4.91 0 0 0 17 5c-2.22 0-4 1.44-5 2-1-.56-2.78-2-5-2a4.9 4.9 0 0 0-5 4.78C2 14 5 22 8 22c1.25 0 2.5-1.06 4-1.06Z"/><path d="M10 2c1 .5 2 2 2 5"/>',
     chevronRight: '<path d="m9 18 6-6-6-6"/>',
     chevronLeft: '<path d="m15 18-6-6 6-6"/>',
     clipboard: '<rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M9 12h6"/><path d="M9 16h6"/>',
@@ -504,8 +505,9 @@ const VIEWS = [
   { id: 'all',       label: 'הכל',      icon: 'listTodo' },
   { id: 'ideas',     label: 'רעיונות',  icon: 'lightbulb' },
   { id: 'trainings', label: 'הדרכות',   icon: 'presentation' },
-  { id: 'wins',      label: 'נצחונות',  icon: 'trophy' },
 ];
+// עמוד נפרד (diet.html), לא תצוגה פנימית — לכן קישור ולא כפתור. הנצחונות עברו להגדרות.
+const DIET_NAV = { href: 'diet.html', label: 'דיאטה', icon: 'apple' };
 
 function renderNav() {
   const pending = draftTasks().length;
@@ -518,9 +520,10 @@ function renderNav() {
       ${ic(v.icon, 22)}<span>${v.label}</span>
       ${v.badge ? `<span class="nav-badge">${v.badge}</span>` : ''}
     </button>`).join('');
-  $('#bottomnav').innerHTML = html;
-  $('#topnav').innerHTML = html;
-  $$('.nav-item').forEach(b => b.onclick = () => {
+  const dietLink = `<a class="nav-item" href="${DIET_NAV.href}">${ic(DIET_NAV.icon, 22)}<span>${DIET_NAV.label}</span></a>`;
+  $('#bottomnav').innerHTML = html + dietLink;
+  $('#topnav').innerHTML = html + dietLink;
+  $$('.nav-item[data-view]').forEach(b => b.onclick = () => {
     VIEW = b.dataset.view;
     localStorage.setItem('tasks_view', VIEW);
     render();
@@ -4468,7 +4471,7 @@ function openSettingsModal() {
   openModal(`
     <h3>${ic('settings', 20)} הגדרות</h3>
     <div style="display:flex;flex-direction:column;gap:10px">
-      <a class="btn btn-ghost" href="diet.html" style="justify-content:flex-start;text-decoration:none">${ic('heart', 18)} יומן דיאטה</a>
+      <button class="btn btn-ghost" id="set-wins" style="justify-content:flex-start">${ic('trophy', 18)} נצחונות</button>
       <button class="btn btn-ghost" id="set-gcal" style="justify-content:flex-start">${ic('calendar', 18)} סנכרון הדרכות ליומן גוגל</button>
       <button class="btn btn-ghost" id="set-export" style="justify-content:flex-start">${ic('download', 18)} גיבוי — הורדת כל הנתונים</button>
       <button class="btn btn-ghost" id="set-history" style="justify-content:flex-start">${ic('history', 18)} היסטוריית שינויים ושחזור</button>
@@ -4477,6 +4480,7 @@ function openSettingsModal() {
     <div class="sheet-actions"><button class="btn btn-ghost" id="set-close" style="flex:1">סגירה</button></div>`);
   $('#set-close').onclick = closeModal;
   $('#set-logout').onclick = () => { closeModal(); logout(); };
+  $('#set-wins').onclick = () => { closeModal(); VIEW = 'wins'; localStorage.setItem('tasks_view', VIEW); render(); };
   $('#set-history').onclick = () => { closeModal(); openHistoryModal(); };
   $('#set-gcal').onclick = () => { closeModal(); openGcalModal(); };
   $('#set-export').onclick = async () => {
