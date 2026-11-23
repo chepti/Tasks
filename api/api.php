@@ -165,6 +165,8 @@ function helpDoc() {
             'courses'        => 'GET  — compact list of courses (id, name, number, sessions, my_sessions, first date). Use course_upsert/course_delete to change them; "all" returns them in full with sessions.',
             'course_upsert'  => 'POST — create/update a course. Update by {id}, {client_id}, or {match:"part of the name"} (409 + candidates if ambiguous); else insert (name required). See course_fields.',
             'course_delete'  => 'POST — { id | match } (snapshot kept for restore; trainings linked to it become standalone).',
+            'diet_days'      => 'GET  — diet journal (diet.html): ?from=YYYY-MM-DD&to=YYYY-MM-DD optional. Returns {days:{date:{date,events:[{id,item,text?,meal:morning|noon|evening,time:HH:MM|null}],pilates,walk,weight}}}. pilates/walk = minutes, weight = kg.',
+            'diet_day_set'   => 'POST — { date:"YYYY-MM-DD", day:{events,pilates,walk,weight} } replaces that whole day; day null/empty deletes it.',
             'setting_set'    => 'POST — { key:"welcome_signature", value:"..." } the signature block appended to every welcome email.',
             'orphans'        => 'GET  — open tasks that have no parent project, plus the project list to pick from.',
             'adopt'          => 'POST — attach existing tasks to a parent project in bulk: { project:"name" | project_id:N, tasks:[ 12, 15, "substring of a title" ] }. Ids and title substrings can be mixed; anything ambiguous comes back under "problems" instead of failing the whole call.',
@@ -400,6 +402,13 @@ try { $db->exec("ALTER TABLE courses ADD COLUMN assignment_url TEXT DEFAULT ''")
 foreach (['audience','equipment','people_count','place','contact_name','contact_role','contact_phone','contact_email'] as $col) {
     try { $db->exec("ALTER TABLE courses ADD COLUMN $col TEXT DEFAULT ''"); } catch (Throwable $e) { /* exists */ }
 }
+
+// יומן דיאטה: שורה ליום (date = YYYY-MM-DD), data = JSON {events:[{id,item,text?,meal,time}], pilates, walk, weight}
+$db->exec("CREATE TABLE IF NOT EXISTS diet_days (
+    date TEXT PRIMARY KEY,
+    data TEXT NOT NULL DEFAULT '{}',
+    updated_at TEXT DEFAULT (datetime('now'))
+)");
 
 // רעיונות לאפליקציות: כל אפליקציה היא מיכל, ובתוכה רשימה מסודרת אחת של פריטים.
 // היררכיה קלה מושגת ע"י פריט מסוג heading שמשמש ככותרת קטנה בתוך הרשימה —
@@ -1500,11 +1509,60 @@ function dispatch($db, $action, $data) {
             'apps' => $db->query("SELECT * FROM apps")->fetchAll(PDO::FETCH_ASSOC),
             'app_items' => $db->query("SELECT * FROM app_items")->fetchAll(PDO::FETCH_ASSOC),
             'courses' => $db->query("SELECT * FROM courses")->fetchAll(PDO::FETCH_ASSOC),
+            'diet_days' => $db->query("SELECT * FROM diet_days ORDER BY date")->fetchAll(PDO::FETCH_ASSOC),
             'history' => array_map(
                 function ($r) { $r['snapshot'] = json_decode($r['snapshot'], true); return $r; },
                 $db->query("SELECT * FROM history")->fetchAll(PDO::FETCH_ASSOC)
             ),
         ];
+    }
+
+    case 'diet_days': {
+        // ?from=YYYY-MM-DD&to=YYYY-MM-DD (אופציונלי). מחזיר {days:{date:{date,events,pilates,walk,weight}}}
+        $ok = function ($v) { return is_string($v) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $v); };
+        $from = $ok($_GET['from'] ?? null) ? $_GET['from'] : '0000-00-00';
+        $to = $ok($_GET['to'] ?? null) ? $_GET['to'] : '9999-12-31';
+        $st = $db->prepare("SELECT date, data FROM diet_days WHERE date >= ? AND date <= ? ORDER BY date");
+        $st->execute([$from, $to]);
+        $days = [];
+        foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+            $d = json_decode($r['data'], true);
+            if (!is_array($d)) $d = [];
+            $d['date'] = $r['date'];
+            $days[$r['date']] = $d;
+        }
+        return ['days' => (object)$days];
+    }
+
+    case 'diet_day_set': {
+        // { date:"YYYY-MM-DD", day:{events:[...], pilates, walk, weight} } — החלפת היום כולו. day ריק/null = מחיקת היום.
+        $date = (string)($data['date'] ?? '');
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) fail('date must be YYYY-MM-DD');
+        $day = $data['day'] ?? null;
+        $clean = ['events' => [], 'pilates' => null, 'walk' => null, 'weight' => null];
+        if (is_array($day)) {
+            foreach (($day['events'] ?? []) as $e) {
+                if (!is_array($e) || empty($e['item'])) continue;
+                $ev = ['id' => (string)($e['id'] ?? ''), 'item' => mb_substr((string)$e['item'], 0, 40),
+                       'meal' => in_array($e['meal'] ?? '', ['morning', 'noon', 'evening'], true) ? $e['meal'] : 'noon',
+                       'time' => isset($e['time']) && preg_match('/^\d{2}:\d{2}$/', (string)$e['time']) ? $e['time'] : null];
+                if (!empty($e['text'])) $ev['text'] = mb_substr((string)$e['text'], 0, 200);
+                $clean['events'][] = $ev;
+            }
+            foreach (['pilates', 'walk', 'weight'] as $k) {
+                $v = $day[$k] ?? null;
+                $clean[$k] = (is_numeric($v) && $v > 0) ? $v + 0 : null;
+            }
+        }
+        $empty = !$clean['events'] && !$clean['pilates'] && !$clean['walk'] && !$clean['weight'];
+        if ($empty) {
+            $db->prepare("DELETE FROM diet_days WHERE date = ?")->execute([$date]);
+            return ['date' => $date, 'saved' => false];
+        }
+        $db->prepare("INSERT INTO diet_days (date, data, updated_at) VALUES (?, ?, datetime('now'))
+                      ON CONFLICT(date) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at")
+           ->execute([$date, json_encode($clean, JSON_UNESCAPED_UNICODE)]);
+        return ['date' => $date, 'saved' => true, 'day' => $clean + ['date' => $date]];
     }
 
     default:

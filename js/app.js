@@ -4468,6 +4468,7 @@ function openSettingsModal() {
   openModal(`
     <h3>${ic('settings', 20)} הגדרות</h3>
     <div style="display:flex;flex-direction:column;gap:10px">
+      <a class="btn btn-ghost" href="diet.html" style="justify-content:flex-start;text-decoration:none">${ic('heart', 18)} יומן דיאטה</a>
       <button class="btn btn-ghost" id="set-gcal" style="justify-content:flex-start">${ic('calendar', 18)} סנכרון הדרכות ליומן גוגל</button>
       <button class="btn btn-ghost" id="set-export" style="justify-content:flex-start">${ic('download', 18)} גיבוי — הורדת כל הנתונים</button>
       <button class="btn btn-ghost" id="set-history" style="justify-content:flex-start">${ic('history', 18)} היסטוריית שינויים ושחזור</button>
