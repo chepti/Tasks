@@ -109,3 +109,11 @@ scp -r -F "T:\.ssh\config" index.html sw.js manifest.webmanifest css js icons ap
 
 קובץ הנתונים `api/tasks.db` נוצר אוטומטית בשרת בבקשה הראשונה — **לא להעלות אותו מחדש** (זה ידרוס נתונים).
 ה-`.htaccess` בתיקיית `api` חוסם גישה ישירה ל-DB ול-config.
+
+## פריסה
+
+- **אוטומטית:** כל דחיפה ל-`main` (מהמחשב, מהסלולרי, מכל מקום) מפעילה את `.github/workflows/deploy.yml`, שקורא ל-`deploy.php` באתר. השרת מושך את הקוד מ-GitHub ומעתיק רק קבצים שהשתנו. אפשר גם ידנית: Actions ← Deploy to chepti.com/tasks ← Run workflow.
+- **לא נוגעים בשרת:** `api/config.php`, קובץ הנתונים (`api/tasks.db*`) ו-`pub/`. קבצים שנמחקו מהריפו לא נמחקים מהשרת.
+- **גיבוי:** לפני כל פריסה נשמר גיבוי של הקבצים שיוחלפו ב-`~/backups-private/tasks-predeploy-*.zip` (10 אחרונים).
+- **הגדרה חד-פעמית:** סוד `DEPLOY_TOKEN` בהגדרות הריפו חייב להיות זהה ל-`$DEPLOY_TOKEN` ב-`api/config.php` בשרת (ראו `config.sample.php`). Hostinger חוסם SSH מכתובות של GitHub Actions, ולכן הפריסה היא HTTPS ולא SSH.
+- **עבודה משני מקומות:** לפני שמתחילים לעבוד במחשב — `git pull`, כדי לא לדרוס שינויים שנדחפו מהסלולרי.
