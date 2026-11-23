@@ -70,9 +70,12 @@ for ($i = 0; $i < $zip->numFiles; $i++) {
 }
 
 // גיבוי הקבצים שעומדים להיות מוחלפים (מחוץ לתיקיית האתר)
-$backupDir = dirname($root, 2) . '/backups-private';
+$backupDir = null;
+foreach ([getenv('HOME'), dirname($root, 2), dirname($root, 3), dirname($root, 4)] as $h) {
+    if ($h && is_dir($h . '/backups-private')) { $backupDir = $h . '/backups-private'; break; }   // תיקיית הגיבויים הפרטית, מחוץ לאתר
+}
 $backupFile = null;
-if ($plan && is_dir($backupDir)) {
+if ($plan && $backupDir) {
     $backupFile = $backupDir . '/tasks-predeploy-' . date('Ymd-His') . '.zip';
     $bz = new ZipArchive();
     if ($bz->open($backupFile, ZipArchive::CREATE) === true) {
@@ -96,6 +99,6 @@ foreach ($plan as [$rel, $dest, $data]) {
 }
 $zip->close(); @unlink($tmpZip);
 
-if (is_dir($backupDir)) @file_put_contents($backupDir . '/tasks-last-deploy.json', json_encode(['at' => date('c'), 'ref' => $ref, 'changed' => $changed], JSON_UNESCAPED_UNICODE));
+if ($backupDir) @file_put_contents($backupDir . '/tasks-last-deploy.json', json_encode(['at' => date('c'), 'ref' => $ref, 'changed' => $changed], JSON_UNESCAPED_UNICODE));
 reply(200, ['ok' => true, 'ref' => $ref, 'changed' => $changed, 'unchanged' => $same, 'skipped_protected' => $skipped,
             'backup' => $backupFile ? basename($backupFile) : null]);
