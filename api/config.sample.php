@@ -15,3 +15,6 @@ $GCAL_CLIENT_SECRET = '';
 
 // מיקום קובץ הנתונים
 $DB_PATH = __DIR__ . '/tasks.db';
+
+// טוקן לפריסה אוטומטית מ-GitHub Actions (deploy.php) — מחרוזת אקראית ארוכה; אותו ערך נשמר כסוד DEPLOY_TOKEN בריפו.
+$DEPLOY_TOKEN = 'CHANGE-ME-LONG-RANDOM';
